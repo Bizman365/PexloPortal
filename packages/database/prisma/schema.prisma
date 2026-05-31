@@ -413,7 +413,7 @@ model Comment {
   externalId     String?
   source         String?
   createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime @default(now()) @updatedAt
 
   update  ProjectUpdate? @relation(fields: [updateId], references: [id], onDelete: Cascade)
   task    Task?          @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -480,7 +480,7 @@ model ProjectNote {
   externalId     String?
   source         String?
   createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime @default(now()) @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
