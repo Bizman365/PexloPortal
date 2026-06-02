@@ -7,10 +7,11 @@ import {
   Body,
   Param,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { Response } from "express";
+import type { Request, Response } from "express";
 import { ConfigService } from "@nestjs/config";
 import { PrismaService } from "../prisma/prisma.service";
 import {
@@ -22,12 +23,13 @@ import {
   CurrentMember,
   PaginationQueryDto,
   paginatedResponse,
+  Public,
   contentDisposition,
   toCsv,
 } from "../common";
 import type { CsvColumn } from "../common";
 import { ClientsService } from "./clients.service";
-import { ChangeRoleDto, SetRateDto } from "./clients.dto";
+import { ChangeRoleDto, CreateInvitationDto, SetRateDto } from "./clients.dto";
 import { UpdateClientProfileDto } from "./client-profile.dto";
 
 @Controller("clients")
@@ -57,7 +59,11 @@ export class ClientsController {
           createdAt: true,
           hourlyRateCents: true,
           user: { select: { id: true, name: true, email: true } },
-          labels: { select: { label: { select: { id: true, name: true, color: true } } } },
+          labels: {
+            select: {
+              label: { select: { id: true, name: true, color: true } },
+            },
+          },
         },
         orderBy: { createdAt: "asc" },
         skip: (page - 1) * limit,
@@ -98,13 +104,26 @@ export class ClientsController {
     });
     const profileMap = new Map(profiles.map((p) => [p.userId, p]));
 
-    type Row = { name: string; email: string; role: string; company?: string; phone?: string; address?: string; website?: string; joinedAt: Date };
+    type Row = {
+      name: string;
+      email: string;
+      role: string;
+      company?: string;
+      phone?: string;
+      address?: string;
+      website?: string;
+      joinedAt: Date;
+    };
     const rows: Row[] = members.map((m) => {
       const p = profileMap.get(m.userId);
       return {
-        name: m.user.name, email: m.user.email, role: m.role,
-        company: p?.company ?? undefined, phone: p?.phone ?? undefined,
-        address: p?.address ?? undefined, website: p?.website ?? undefined,
+        name: m.user.name,
+        email: m.user.email,
+        role: m.role,
+        company: p?.company ?? undefined,
+        phone: p?.phone ?? undefined,
+        address: p?.address ?? undefined,
+        website: p?.website ?? undefined,
         joinedAt: m.createdAt,
       };
     });
@@ -117,7 +136,10 @@ export class ClientsController {
       { header: "Phone", value: (r) => r.phone },
       { header: "Address", value: (r) => r.address },
       { header: "Website", value: (r) => r.website },
-      { header: "Joined At", value: (r) => r.joinedAt.toISOString().split("T")[0] },
+      {
+        header: "Joined At",
+        value: (r) => r.joinedAt.toISOString().split("T")[0],
+      },
     ];
     const csv = toCsv(columns, rows);
     res.setHeader("Content-Type", "text/csv");
@@ -137,6 +159,41 @@ export class ClientsController {
       ...inv,
       inviteLink: `${webUrl}/accept-invite?id=${inv.id}`,
     }));
+  }
+
+  @Post("invitations")
+  @Roles("owner", "admin")
+  async createInvitation(
+    @CurrentOrg("id") orgId: string,
+    @CurrentUser("id") inviterId: string,
+    @Body() dto: CreateInvitationDto,
+  ) {
+    const webUrl = this.config.get("WEB_URL", "http://localhost:3000");
+    const invitation = await this.clientsService.createInvitation(
+      orgId,
+      inviterId,
+      dto,
+    );
+    return {
+      ...invitation,
+      inviteLink: `${webUrl}/accept-invite?id=${invitation.id}`,
+    };
+  }
+
+  @Get("invitations/:id/public")
+  @Public()
+  async publicInvitation(@Param("id") invitationId: string) {
+    return this.clientsService.getPublicInvitation(invitationId);
+  }
+
+  @Post("invitations/:id/accept")
+  @Public()
+  async acceptInvitation(
+    @Param("id") invitationId: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.clientsService.acceptInvitation(invitationId, req, res);
   }
 
   @Get("me/profile")
@@ -194,12 +251,7 @@ export class ClientsController {
     @CurrentUser("id") userId: string,
     @CurrentMember("role") role: string,
   ) {
-    return this.clientsService.generateResetLink(
-      memberId,
-      orgId,
-      userId,
-      role,
-    );
+    return this.clientsService.generateResetLink(memberId, orgId, userId, role);
   }
 
   @Put(":id/role")

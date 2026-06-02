@@ -1,222 +1,166 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { setActiveOrgAndRedirect } from "@/lib/api";
-import { track } from "@/lib/track";
+import { apiFetch } from "@/lib/api";
+
+interface PublicInvitation {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  expiresAt: string;
+  organizationName: string;
+}
+
+function InvalidInvitation() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="text-center max-w-sm">
+        <h1 className="text-2xl font-bold mb-2">Invalid Invitation</h1>
+        <p className="text-[var(--muted-foreground)]">
+          This invitation link is missing or invalid.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function AcceptInviteContent() {
   const searchParams = useSearchParams();
   const invitationId = searchParams.get("id");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [invitation, setInvitation] = useState<PublicInvitation | null>(null);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<"signup" | "login">("signup");
+  const [loading, setLoading] = useState(Boolean(invitationId));
 
-  if (!invitationId) {
+  useEffect(() => {
+    if (!invitationId) return;
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+
+    apiFetch<PublicInvitation>(`/clients/invitations/${invitationId}/public`)
+      .then((data) => {
+        if (!cancelled) setInvitation(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "This invitation link is missing or invalid.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [invitationId]);
+
+  const signInHref = useMemo(() => {
+    if (!invitation) return "#";
+    const callbackUrl = `/accept-invite/complete?id=${encodeURIComponent(
+      invitation.id,
+    )}`;
+    const params = new URLSearchParams({
+      callbackUrl,
+      loginHint: invitation.email,
+    });
+    return `/portal/sign-in?${params.toString()}`;
+  }, [invitation]);
+
+  if (!invitationId) return <InvalidInvitation />;
+
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Invalid Invitation</h1>
-          <p className="text-[var(--muted-foreground)]">
-            This invitation link is missing or invalid.
+        <div className="w-full max-w-sm text-center space-y-3">
+          <div className="mx-auto h-8 w-8 rounded-full border-2 border-[var(--border)] border-t-[var(--primary)] animate-spin" />
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Loading invitation...
           </p>
         </div>
       </div>
     );
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  if (error || !invitation) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-sm text-center space-y-3">
+          <h1 className="text-2xl font-bold">Invalid Invitation</h1>
+          <p className="text-[var(--muted-foreground)]">
+            {error || "This invitation link is missing or invalid."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-    const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL || "";
+  if (invitation.status !== "pending") {
+    const copy =
+      invitation.status === "accepted"
+        ? "This invitation has already been accepted. Sign in to continue."
+        : "This invitation is no longer active. Ask your organization admin for a new invite.";
 
-    try {
-      // Step 1: Sign up or login
-      if (mode === "signup") {
-        const res = await fetch(`${apiUrl}/api/auth/sign-up/email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password }),
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          // If user already exists, auto-switch to login and retry
-          if (res.status === 422 || data.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
-            const loginRes = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email, password }),
-              credentials: "include",
-            });
-            if (!loginRes.ok) {
-              const loginData = await loginRes.json().catch(() => ({}));
-              throw new Error(loginData.message || "Account exists but login failed. Try signing in instead.");
-            }
-            setMode("login");
-          } else {
-            throw new Error(data.message || "Signup failed");
-          }
-        }
-      } else {
-        const res = await fetch(`${apiUrl}/api/auth/sign-in/email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.message || "Login failed");
-        }
-      }
-
-      // Step 2: Accept the invitation
-      const acceptRes = await fetch(
-        `${apiUrl}/api/auth/organization/accept-invitation`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invitationId }),
-          credentials: "include",
-        },
-      );
-
-      if (!acceptRes.ok) {
-        const data = await acceptRes.json().catch(() => ({}));
-        throw new Error(data.message || "Failed to accept invitation");
-      }
-
-      // Pin the active org to the one we just joined. Without this, users who
-      // already belong to another org (e.g. their own agency) can be routed
-      // to that org's dashboard/setup instead of the invited org's portal.
-      const acceptData: {
-        member?: { organizationId?: string };
-        invitation?: { organizationId?: string };
-      } = await acceptRes.json().catch(() => ({}));
-      const joinedOrgId =
-        acceptData.member?.organizationId ??
-        acceptData.invitation?.organizationId;
-
-      // Step 3: Set active organization and redirect by role
-      track("invite_accepted");
-      window.location.href = await setActiveOrgAndRedirect(
-        "/portal",
-        joinedOrgId,
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-sm text-center space-y-4">
+          <h1 className="text-2xl font-bold">Invitation {invitation.status}</h1>
+          <p className="text-[var(--muted-foreground)]">{copy}</p>
+          <Link
+            href="/portal/sign-in"
+            className="inline-flex justify-center rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          >
+            Sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-6">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border border-[var(--border)] bg-[var(--background)] p-6 shadow-sm">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Join Project Portal</h1>
+          <h1 className="text-2xl font-bold">
+            Join {invitation.organizationName}
+          </h1>
           <p className="text-[var(--muted-foreground)] mt-2">
-            {mode === "signup"
-              ? "Create an account to access your project"
-              : "Sign in to accept your invitation"}
+            You were invited as {invitation.email}. Continue with WorkOS AuthKit
+            to sign in or create your account securely.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          {mode === "signup" && (
-            <div className="space-y-2">
-              <label htmlFor="name" className="text-sm font-medium">
-                Your Name
-              </label>
-              <input
-                id="name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            />
+        <div className="rounded-lg bg-[var(--muted)] p-4 text-sm space-y-1">
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--muted-foreground)]">Organization</span>
+            <span className="font-medium text-right">
+              {invitation.organizationName}
+            </span>
           </div>
-
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-sm font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={8}
-              className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-            />
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--muted-foreground)]">Email</span>
+            <span className="font-medium text-right">{invitation.email}</span>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2 bg-[var(--primary)] text-white rounded-lg font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {loading
-              ? "Processing..."
-              : mode === "signup"
-                ? "Create Account & Join"
-                : "Sign In & Join"}
-          </button>
-        </form>
+        <Link
+          href={signInHref}
+          className="block w-full rounded-lg bg-[var(--primary)] px-4 py-3 text-center font-medium text-white hover:opacity-90"
+        >
+          Continue with WorkOS
+        </Link>
 
-        <p className="text-center text-sm text-[var(--muted-foreground)]">
-          {mode === "signup" ? (
-            <>
-              Already have an account?{" "}
-              <button
-                onClick={() => setMode("login")}
-                className="text-[var(--primary)] hover:underline"
-              >
-                Sign in instead
-              </button>
-            </>
-          ) : (
-            <>
-              Need an account?{" "}
-              <button
-                onClick={() => setMode("signup")}
-                className="text-[var(--primary)] hover:underline"
-              >
-                Sign up
-              </button>
-            </>
-          )}
+        <p className="text-center text-xs text-[var(--muted-foreground)]">
+          Sessions are created only by WorkOS. After authentication we’ll add
+          you to the invited organization and send you to the portal.
         </p>
       </div>
     </div>
@@ -225,7 +169,7 @@ function AcceptInviteContent() {
 
 export default function AcceptInvitePage() {
   return (
-    <Suspense>
+    <Suspense fallback={<InvalidInvitation />}>
       <AcceptInviteContent />
     </Suspense>
   );

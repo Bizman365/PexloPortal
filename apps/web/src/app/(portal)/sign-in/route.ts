@@ -15,9 +15,11 @@ import { NextResponse, type NextRequest } from "next/server";
 export function GET(request: NextRequest) {
   const url = request.nextUrl.clone();
   url.pathname = "/portal/sign-in";
-  // Preserve callbackUrl if present; clear other params.
+  // Preserve callbackUrl/loginHint if present; clear other params.
   const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
+  const loginHint = request.nextUrl.searchParams.get("loginHint");
   url.search = "";
   if (callbackUrl) url.searchParams.set("callbackUrl", callbackUrl);
+  if (loginHint) url.searchParams.set("loginHint", loginHint);
   return NextResponse.redirect(url);
 }
