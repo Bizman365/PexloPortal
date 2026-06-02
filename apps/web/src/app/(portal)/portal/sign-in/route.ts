@@ -21,6 +21,10 @@ function safeCallback(raw: string | null): string {
 
 export async function GET(request: NextRequest) {
   const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
-  const signInUrl = await getSignInUrl({ returnTo: safeCallback(callbackUrl) });
+  const loginHint = request.nextUrl.searchParams.get("loginHint") || undefined;
+  const signInUrl = await getSignInUrl({
+    returnTo: safeCallback(callbackUrl),
+    loginHint,
+  });
   return NextResponse.redirect(signInUrl);
 }

@@ -25,27 +25,16 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
     setSaving(true);
     setError("");
     try {
-      await apiFetch("/auth/organization/invite-member", {
-        method: "POST",
-        body: JSON.stringify({ email: email.trim(), role: "member" }),
-      });
+      const invitation = await apiFetch<{ inviteLink?: string }>(
+        "/clients/invitations",
+        {
+          method: "POST",
+          body: JSON.stringify({ email: email.trim(), role: "member" }),
+        },
+      );
       setInvited(true);
-
-      // Try to get the invite link
-      try {
-        const invitations = await apiFetch<
-          Array<{ email: string; inviteLink: string }>
-        >("/clients/invitations");
-        const newest = invitations.find(
-          (inv) =>
-            inv.email === email.trim().toLowerCase() ||
-            inv.email === email.trim(),
-        );
-        if (newest) {
-          setInviteLink(newest.inviteLink);
-        }
-      } catch {
-        // Invite link retrieval is best-effort
+      if (invitation.inviteLink) {
+        setInviteLink(invitation.inviteLink);
       }
     } catch (err) {
       setError(
@@ -86,10 +75,7 @@ export function StepInviteClient({ onNext, onBack }: StepInviteClientProps) {
           </div>
 
           <div className="space-y-2">
-            <label
-              htmlFor="setup-client-email"
-              className="text-sm font-medium"
-            >
+            <label htmlFor="setup-client-email" className="text-sm font-medium">
               Client Email
             </label>
             <input
