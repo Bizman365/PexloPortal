@@ -187,6 +187,57 @@ describe("ProjectsService", () => {
     );
   });
 
+  it("findByClient adds visible task progress fields without exposing task rows", async () => {
+    const updatedAt = new Date("2026-06-02T14:30:00.000Z");
+    const createdAt = new Date("2026-06-01T10:00:00.000Z");
+    const projects = [
+      {
+        id: "proj-client",
+        name: "Client Project",
+        organizationId: "org-1",
+        status: "in_progress",
+        createdAt,
+        updatedAt,
+        tasks: [
+          { status: "done", completedAt: null },
+          { status: "open", completedAt: null },
+          { status: "in_progress", completedAt: new Date("2026-06-02T12:00:00.000Z") },
+        ],
+      },
+    ];
+    mockPrisma.project.findMany.mockReturnValue(Promise.resolve(projects));
+    mockPrisma.project.count.mockReturnValue(Promise.resolve(1));
+
+    const result = await service.findByClient("user-client", "org-1", {});
+
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          organizationId: "org-1",
+          archivedAt: null,
+          clients: { some: { userId: "user-client" } },
+        }),
+        include: {
+          tasks: {
+            where: { clientVisible: true },
+            select: { status: true, completedAt: true },
+          },
+        },
+      }),
+    );
+    expect(result.meta.total).toBe(1);
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        id: "proj-client",
+        taskCount: 3,
+        completedTaskCount: 2,
+        completionPercent: 67,
+        lastUpdatedAt: updatedAt,
+      }),
+    );
+    expect("tasks" in result.data[0]).toBe(false);
+  });
+
   describe("duplicate", () => {
     const sourceProject = {
       id: "src-1",
