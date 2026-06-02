@@ -9,6 +9,7 @@ import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
+import { ResolvePendingCaptureModal, type PendingCapture } from "@/components/log-time-modal";
 import { TASK_STATUS_OPTIONS } from "@/lib/task-status";
 
 export interface TaskDetailRecord {
@@ -95,14 +96,20 @@ export function TaskDetailModal({
   const [newLabelColor, setNewLabelColor] = useState<string>(PRESET_COLORS[0].hex);
   const [savingLabel, setSavingLabel] = useState(false);
   const [labelError, setLabelError] = useState("");
+  const [resolveCapture, setResolveCapture] = useState<PendingCapture | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (resolveCapture) {
+        setResolveCapture(null);
+        return;
+      }
+      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, resolveCapture]);
 
   const patch = useCallback(
     async (body: Record<string, unknown>) => {
@@ -165,6 +172,18 @@ export function TaskDetailModal({
     }
   };
 
+  const findPendingCaptureForTask = useCallback(async (): Promise<PendingCapture | null> => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      const captures = await apiFetch<PendingCapture[]>("/time-entries/pending-captures");
+      const capture = captures.find((item) => item.taskId === task.id) ?? null;
+      if (capture) return capture;
+    }
+    return null;
+  }, [task.id]);
+
   const handleStatusChange = async (next: string) => {
     if (next === status) return;
     const prev = status;
@@ -173,6 +192,16 @@ export function TaskDetailModal({
       await patch({ status: next });
     } catch {
       setStatus(prev);
+      return;
+    }
+
+    if (next === "done" && prev !== "done") {
+      try {
+        const capture = await findPendingCaptureForTask();
+        if (capture) setResolveCapture(capture);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : "Task marked done, but time prompt could not load");
+      }
     }
   };
 
@@ -828,6 +857,24 @@ export function TaskDetailModal({
           </div>
         </div>
       </div>
+      {resolveCapture && (
+        <ResolvePendingCaptureModal
+          capture={resolveCapture}
+          title="Log time for this task"
+          description={resolveCapture.task?.title ?? task.title}
+          cancelLabel="Skip / I'll log later"
+          onCancel={() => setResolveCapture(null)}
+          onResolve={async (durationSec, billable) => {
+            await apiFetch(`/time-entries/pending-captures/${resolveCapture.id}/resolve`, {
+              method: "POST",
+              body: JSON.stringify({ durationSec, billable }),
+            });
+            setResolveCapture(null);
+            success("Time logged");
+            onChange();
+          }}
+        />
+      )}
     </div>
   );
 }
