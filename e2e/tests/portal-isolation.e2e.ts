@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { seedUser } from "./helpers";
 
 /**
  * Portal Isolation Tests
@@ -115,7 +116,12 @@ test.describe("Portal Isolation", () => {
   });
 
   test.describe("Portal navigation does NOT expose admin routes", () => {
-    test("portal header has only client-safe links", async ({ page }) => {
+    test("portal header has only client-safe links", async ({ browser }) => {
+      const member = await seedUser(browser, {
+        role: "member",
+        prefix: "portal-nav-member",
+      });
+      const page = await member.context.newPage();
       await page.goto("/portal");
       // Should have portal nav links (Projects and Settings; Invoices is now within projects)
       await expect(page.getByRole("link", { name: /projects/i })).toBeVisible();
@@ -125,12 +131,19 @@ test.describe("Portal Isolation", () => {
       await expect(page.getByRole("link", { name: /^overview$/i })).not.toBeVisible();
       await expect(page.getByRole("link", { name: /^clients$/i })).not.toBeVisible();
       await expect(page.getByRole("link", { name: /branding/i })).not.toBeVisible();
+      await member.context.close();
     });
 
-    test("portal does NOT render dashboard sidebar", async ({ page }) => {
+    test("portal does NOT render dashboard sidebar", async ({ browser }) => {
+      const member = await seedUser(browser, {
+        role: "member",
+        prefix: "portal-sidebar-member",
+      });
+      const page = await member.context.newPage();
       await page.goto("/portal");
       // The sidebar nav is a dashboard-only component
       await expect(page.locator("nav").getByText(/overview/i)).not.toBeVisible();
+      await member.context.close();
     });
   });
 

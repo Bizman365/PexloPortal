@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { DEFAULT_BRANDING } from "@atrium/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { UpdateBrandingDto } from "./branding.dto";
 
@@ -17,8 +18,8 @@ export class BrandingService {
     if (!branding) {
       return {
         organizationId,
-        primaryColor: null,
-        accentColor: null,
+        primaryColor: DEFAULT_BRANDING.primaryColor,
+        accentColor: DEFAULT_BRANDING.accentColor,
         logoKey: null,
         logoUrl: null,
         hideLogo: false,

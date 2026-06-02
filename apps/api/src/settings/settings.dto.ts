@@ -1,6 +1,7 @@
 import {
   IsOptional,
   IsString,
+  IsNotEmpty,
   IsEmail,
   IsInt,
   IsBoolean,
@@ -82,6 +83,13 @@ export class UpdateSettingsDto {
   @Transform(({ value }) => (value === "" ? null : value))
   @IsIn([true, false, null])
   telemetryEnabled?: boolean | null;
+}
+
+export class UpdateOrganizationDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name!: string;
 }
 
 export class SaveCustomDomainDto {

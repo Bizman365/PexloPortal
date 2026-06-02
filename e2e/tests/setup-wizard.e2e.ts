@@ -1,4 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
+import { seedUser } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
@@ -35,37 +36,45 @@ async function skipEmailStepIfPresent(page: Page) {
  */
 async function signupAndNavigateToSetup(
   page: Page,
-  prefix: string,
+  _prefix: string,
 ): Promise<{ email: string; password: string }> {
-  const email = `${prefix}-${Date.now()}@test.local`;
-  const password = `${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}123!`;
-
-  await page.request.post(`${API_URL}/api/onboarding/signup`, {
-    data: {
-      name: `${prefix} User`,
-      email,
-      password,
-      orgName: `${prefix} Org`,
-    },
-  });
-
+  // Note: caller already seeded an incomplete-setup user and is reusing that
+  // page's context. We just navigate to the wizard here.
   await page.goto(`${WEB_URL}/setup`, {
     waitUntil: "networkidle",
     timeout: 15000,
   });
 
-  if (page.url().includes("/login")) {
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-  }
-
   await expect(
     page.getByRole("heading", { name: /organization profile/i }),
   ).toBeVisible({ timeout: 10000 });
 
-  return { email, password };
+  // Ensure the org-name field has a value before the caller clicks Continue.
+  // The field pre-fills asynchronously from the loaded org; fill it explicitly
+  // so step-1 validation passes deterministically regardless of load timing.
+  const orgNameInput = page.locator("#setup-org-name");
+  await expect(orgNameInput).toBeVisible({ timeout: 10000 });
+  if (!(await orgNameInput.inputValue())) {
+    await orgNameInput.fill("E2E Setup Org");
+  }
+
+  return { email: "", password: "" };
+}
+
+/**
+ * Seed an owner whose org has NOT completed setup, returning an authed page
+ * positioned to enter the setup wizard. Vendor-decoupled (no WorkOS signup).
+ */
+async function seedIncompleteSetupOwner(
+  browser: import("@playwright/test").Browser,
+  prefix: string,
+): Promise<Page> {
+  const seeded = await seedUser(browser, {
+    role: "owner",
+    prefix,
+    setupCompleted: false,
+  });
+  return seeded.context.newPage();
 }
 
 /**
@@ -97,22 +106,8 @@ async function completeSetupWizard(page: Page) {
 
 test.describe("Setup Wizard", () => {
   test("setup wizard page loads for new org owner", async ({ browser }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
-
-    const email = `setup-test-${Date.now()}@test.local`;
-    const password = "SetupTest123!";
-
-    // Sign up a new account via API
-    const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
-      data: {
-        name: "Setup Test User",
-        email,
-        password,
-        orgName: "Setup Test Org",
-      },
-    });
-    expect(res.ok()).toBeTruthy();
+    const page = await seedIncompleteSetupOwner(browser, "setup-loads");
+    const context = page.context();
 
     // Navigate to dashboard — should redirect to setup for new org
     await page.goto(`${WEB_URL}/dashboard`, {
@@ -120,21 +115,13 @@ test.describe("Setup Wizard", () => {
       timeout: 15000,
     });
 
-    // If redirected to login, sign in manually
-    if (page.url().includes("/login")) {
-      await page.getByLabel(/email/i).fill(email);
-      await page.getByLabel(/password/i).fill(password);
-      await page.getByRole("button", { name: /sign in/i }).click();
-      await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-    }
-
     // Should be on setup page (new org has setupCompleted=false)
     const url = page.url();
     expect(url).toMatch(/\/setup/);
 
     // Verify the setup wizard heading is visible
     await expect(
-      page.getByRole("heading", { name: /welcome to atrium/i }),
+      page.getByRole("heading", { name: /welcome to pexlo portal/i }),
     ).toBeVisible({ timeout: 10000 });
 
     // Verify step 1 (Organization Profile) is shown
@@ -150,8 +137,8 @@ test.describe("Setup Wizard", () => {
   });
 
   test("setup wizard step navigation works", async ({ browser }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
+    const page = await seedIncompleteSetupOwner(browser, "setup-nav");
+    const context = page.context();
 
     await signupAndNavigateToSetup(page, "setup-nav");
 
@@ -187,8 +174,8 @@ test.describe("Setup Wizard", () => {
   });
 
   test("setup wizard back navigation works", async ({ browser }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
+    const page = await seedIncompleteSetupOwner(browser, "setup-back");
+    const context = page.context();
 
     await signupAndNavigateToSetup(page, "setup-back");
 
@@ -213,8 +200,8 @@ test.describe("Setup Wizard", () => {
   });
 
   test("completed setup does not redirect to wizard", async ({ browser }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
+    const page = await seedIncompleteSetupOwner(browser, "setup-done");
+    const context = page.context();
 
     await signupAndNavigateToSetup(page, "setup-done");
 
@@ -237,8 +224,8 @@ test.describe("Setup Wizard", () => {
   test("setup wizard creates a project when filled in", async ({
     browser,
   }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
+    const page = await seedIncompleteSetupOwner(browser, "setup-proj");
+    const context = page.context();
 
     await signupAndNavigateToSetup(page, "setup-proj");
 
@@ -278,13 +265,13 @@ test.describe("Setup Wizard", () => {
   });
 
   test("stepper shows correct progress indicators", async ({ browser }) => {
-    const context = await browser.newContext({ storageState: undefined });
-    const page = await context.newPage();
+    const page = await seedIncompleteSetupOwner(browser, "setup-step");
+    const context = page.context();
 
     await signupAndNavigateToSetup(page, "setup-step");
 
     await expect(
-      page.getByRole("heading", { name: /welcome to atrium/i }),
+      page.getByRole("heading", { name: /welcome to pexlo portal/i }),
     ).toBeVisible({ timeout: 10000 });
 
     // Verify step labels are present (visible on desktop)

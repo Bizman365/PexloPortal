@@ -1,100 +1,108 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { PrismaClient } from "../packages/database/src";
 
 /**
- * Global setup creates a unique test account for each test run using a
- * timestamped email (e2e-<timestamp>@test.local). These accounts are
- * intentionally not cleaned up after the run because:
+ * Global setup — deterministic, vendor-decoupled e2e auth bootstrap.
  *
- *  1. Each run uses a unique email, so stale accounts don't cause conflicts.
- *  2. Cleanup would require direct database access or an admin API endpoint
- *     that doesn't exist yet.
+ * Instead of calling the live WorkOS signup flow (which requires real WorkOS
+ * credentials, accumulates sandbox users, and is subject to rate limits /
+ * vendor downtime), we seed an owner user + organization + membership directly
+ * into the test database and authenticate via the gated E2E test-auth path in
+ * SessionMiddleware (honored ONLY when E2E_TEST_MODE === "true", which is never
+ * set in production).
  *
- * In CI environments the test database should be reset between runs
- * (e.g. drop/recreate the DB or use a fresh container) to prevent
- * accumulation of orphaned test data.
+ * The resulting storageState carries two cookies:
+ *   - `e2e-test-user`: the seeded user's id (resolved by SessionMiddleware)
+ *   - `csrf-token`:     a token matching the cookie, so write requests pass the
+ *                       CSRF guard (tests send it back via x-csrf-token).
+ *
+ * Requires E2E_TEST_MODE=true on the API process (set in CI for the Playwright
+ * step and in the dev webServer command).
  */
 async function globalSetup() {
-  const browser = await chromium.launch();
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
-  const email = `e2e-${Date.now()}@test.local`;
-  const password = "TestPass123!";
-
-  // Sign up via the API directly (more reliable than form interaction)
   const apiUrl = "http://localhost:3001";
-  const res = await page.request.post(`${apiUrl}/api/onboarding/signup`, {
-    data: { name: "E2E Test User", email, password, orgName: "E2E Test Org" },
-  });
+  const prisma = new PrismaClient();
 
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(`Signup failed (${res.status()}): ${body}`);
-  }
+  try {
+    // Stable identities so re-runs against a persistent DB are idempotent.
+    const userId = randomUUID();
+    const orgId = randomUUID();
+    const email = `e2e-${Date.now()}@test.local`;
 
-  // The signup response sets session cookies on the API domain.
-  // Navigate to a page that will establish the cookies in the browser context.
-  // The API already set cookies via Set-Cookie headers on the response above.
-  // Now navigate to the web app — the dashboard layout will check the session
-  // via server-side fetch to the API, forwarding cookies.
-  // New accounts redirect to /setup since setupCompleted=false.
-  await page.goto("http://localhost:3000/dashboard", {
-    waitUntil: "networkidle",
-    timeout: 15000,
-  });
+    const org = await prisma.organization.create({
+      data: {
+        id: orgId,
+        name: "E2E Test Org",
+        slug: `e2e-test-org-${randomBytes(3).toString("hex")}`,
+        setupCompleted: true,
+      },
+    });
 
-  let url = page.url();
-  if (url.includes("/login")) {
-    // Cookies might not have propagated. Try logging in explicitly.
-    await page.goto("http://localhost:3000/login");
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-    url = page.url();
-  }
+    const user = await prisma.user.create({
+      data: {
+        id: userId,
+        name: "E2E Test User",
+        email,
+        emailVerified: true,
+        // workosUserId intentionally null — the e2e path never touches WorkOS.
+      },
+    });
 
-  // If redirected to setup wizard, complete it so existing tests work
-  if (url.includes("/setup")) {
-    // Get a CSRF token first (any GET request sets the csrf-token cookie)
-    await page.request.get(`${apiUrl}/api/setup/status`);
-    const cookies = await context.cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
+    await prisma.member.create({
+      data: {
+        id: randomUUID(),
+        organizationId: org.id,
+        userId: user.id,
+        role: "owner",
+      },
+    });
 
-    // Try completing setup via API first (fastest path)
-    const completeRes = await page.request.post(
-      `${apiUrl}/api/setup/complete`,
-      { headers: { "x-csrf-token": csrfToken } },
-    );
-    if (completeRes.ok()) {
-      await page.goto("http://localhost:3000/dashboard", {
-        waitUntil: "networkidle",
-        timeout: 15000,
-      });
-    } else {
-      // Fallback: step through the wizard manually
-      await page.waitForSelector("text=Organization Profile", {
-        timeout: 10000,
-      });
-      await page.getByRole("button", { name: /continue/i }).click();
-      await page.waitForSelector("text=Email Configuration", {
-        timeout: 10000,
-      });
-      await page.getByRole("button", { name: /skip & continue/i }).click();
-      await page.waitForSelector("text=Create Your First Project", {
-        timeout: 10000,
-      });
-      await page.getByRole("button", { name: /skip/i }).first().click();
-      await page.waitForSelector("text=Invite a Client", { timeout: 10000 });
-      await page.getByRole("button", { name: /skip/i }).first().click();
-      await page.waitForSelector("text=You are all set", { timeout: 10000 });
-      await page.getByRole("button", { name: /go to dashboard/i }).click();
-      await page.waitForURL("**/dashboard", { timeout: 15000 });
+    // Mint a CSRF token and inject both cookies into a fresh browser context,
+    // then persist the storage state all tests reuse.
+    const csrfToken = randomBytes(32).toString("hex");
+    const browser = await chromium.launch();
+    const context = await browser.newContext();
+
+    await context.addCookies([
+      {
+        name: "e2e-test-user",
+        value: user.id,
+        domain: "localhost",
+        path: "/",
+        httpOnly: true,
+        sameSite: "Lax",
+      },
+      {
+        name: "csrf-token",
+        value: csrfToken,
+        domain: "localhost",
+        path: "/",
+        sameSite: "Lax",
+      },
+    ]);
+
+    // Sanity check: confirm the seeded session authenticates end-to-end before
+    // committing storage state, so a misconfigured E2E_TEST_MODE fails loudly
+    // here instead of in every downstream test.
+    const page = await context.newPage();
+    const check = await page.request.get(`${apiUrl}/api/projects?limit=1`);
+    if (check.status() === 401) {
+      throw new Error(
+        "E2E auth bootstrap failed: seeded session was rejected (401). " +
+          "Ensure the API process has E2E_TEST_MODE=true.",
+      );
     }
-  }
 
-  await context.storageState({ path: "e2e/.auth/user.json" });
-  await browser.close();
+    const authDir = resolve(__dirname, ".auth");
+    mkdirSync(authDir, { recursive: true });
+    await context.storageState({ path: resolve(authDir, "user.json") });
+    await browser.close();
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
 export default globalSetup;

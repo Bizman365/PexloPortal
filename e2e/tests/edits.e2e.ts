@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, Page, BrowserContext } from "@playwright/test";
-import { getCsrfToken, getCsrfTokenFromContext } from "./helpers";
+import { getCsrfToken, getCsrfTokenFromContext, seedUser } from "./helpers";
 
 const API = "http://localhost:3001/api";
 const API_URL = "http://localhost:3001";
@@ -10,61 +10,29 @@ interface OwnerSession {
   context: BrowserContext;
   page: Page;
   email: string;
-  password: string;
+  orgId: string;
 }
 
 /**
- * Create an owner user with a fresh org and a completed setup,
- * returning the authenticated browser context.
+ * Seed an owner user with a fresh org (setup completed) and return the
+ * authenticated browser context. Vendor-decoupled — no WorkOS signup.
  */
 async function createOwnerUser(
   browser: Browser,
   prefix = "edit-owner",
 ): Promise<OwnerSession> {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-
-  const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const email = `${prefix}-${stamp}@test.local`;
-  const password = "EditOwner123!";
-  const orgName = `${prefix} Org ${stamp}`;
-
-  const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
-    data: { name: "Edit Owner", email, password, orgName },
-  });
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(`Owner signup failed (${res.status()}): ${body}`);
-  }
-
+  const seeded = await seedUser(browser, { role: "owner", prefix });
+  const page = await seeded.context.newPage();
   await page.goto(`${WEB_URL}/dashboard`, {
     waitUntil: "networkidle",
     timeout: 15000,
   });
-
-  let url = page.url();
-  if (url.includes("/login")) {
-    await page.goto(`${WEB_URL}/login`);
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-    url = page.url();
-  }
-
-  if (url.includes("/setup")) {
-    await page.request.get(`${API_URL}/api/setup/status`);
-    const csrf = await getCsrfTokenFromContext(context);
-    await page.request.post(`${API_URL}/api/setup/complete`, {
-      headers: { "x-csrf-token": csrf },
-    });
-    await page.goto(`${WEB_URL}/dashboard`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-  }
-
-  return { context, page, email, password };
+  return {
+    context: seeded.context,
+    page,
+    email: seeded.email,
+    orgId: seeded.orgId,
+  };
 }
 
 test.describe("Edit flows", () => {
@@ -203,10 +171,8 @@ test.describe("Edit flows", () => {
     browser,
   }) => {
     // 1. Create an agency owner with a project, then invite a client member.
-    const { context: ownerCtx, page: ownerPage } = await createOwnerUser(
-      browser,
-      "edit-portal",
-    );
+    const { context: ownerCtx, page: ownerPage, orgId } =
+      await createOwnerUser(browser, "edit-portal");
     const ownerCsrf = await getCsrfTokenFromContext(ownerCtx);
 
     const projectRes = await ownerPage.request.post(`${API}/projects`, {
@@ -217,83 +183,16 @@ test.describe("Edit flows", () => {
     const project = await projectRes.json();
     const projectId = project.id as string;
 
-    const clientEmail = `edit-client-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 6)}@test.local`;
-    const clientPassword = "ClientEdit123!";
-
-    // Invite the client as a member of the org.
-    const inviteRes = await ownerPage.request.post(
-      `${API_URL}/api/auth/organization/invite-member`,
-      {
-        data: { email: clientEmail, role: "member" },
-        headers: { Origin: WEB_URL },
-      },
-    );
-    expect(inviteRes.ok()).toBeTruthy();
-    const inviteBody = await inviteRes.json();
-    const invitationId: string =
-      inviteBody?.id || inviteBody?.invitation?.id || inviteBody?.data?.id;
-    expect(invitationId).toBeTruthy();
-
-    // 2. Client accepts the invite by signing up — this establishes a session
-    //    in the client's fresh context.
-    const clientCtx = await browser.newContext({ storageState: undefined });
+    // Seed the client as a member of the SAME org (vendor-decoupled; no invite
+    // signup flow). Returns an authenticated client context directly.
+    const client = await seedUser(browser, {
+      role: "member",
+      prefix: "edit-client",
+      orgId,
+    });
+    const clientCtx = client.context;
     const clientPage = await clientCtx.newPage();
-
-    await clientPage.goto(
-      `${WEB_URL}/accept-invite?id=${invitationId}`,
-      { waitUntil: "networkidle", timeout: 15000 },
-    );
-    await clientPage.getByLabel(/your name/i).fill("Portal Edit Client");
-    await clientPage.getByLabel(/email/i).fill(clientEmail);
-    await clientPage.getByLabel(/password/i).fill(clientPassword);
-    await clientPage
-      .getByRole("button", { name: /create account & join/i })
-      .click();
-    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
-
-    // 3. Assign the new client to the project so /projects/mine/:id works.
-    // Look up the client's user id via the owner's session, then add them.
-    const membersRes = await ownerPage.request.get(
-      `${API_URL}/api/auth/organization/list-members`,
-      { headers: { Origin: WEB_URL } },
-    );
-    let clientUserId = "";
-    if (membersRes.ok()) {
-      const membersBody = await membersRes.json();
-      const members = membersBody?.members ?? membersBody?.data ?? membersBody;
-      if (Array.isArray(members)) {
-        const match = members.find(
-          (m: { user?: { email?: string }; email?: string }) =>
-            m.user?.email === clientEmail || m.email === clientEmail,
-        );
-        clientUserId = match?.user?.id ?? match?.userId ?? "";
-      }
-    }
-    // Fallback: fetch clients list used by dashboard.
-    if (!clientUserId) {
-      const clientsRes = await ownerPage.request.get(
-        `${API}/clients?limit=50`,
-      );
-      if (clientsRes.ok()) {
-        const body = await clientsRes.json();
-        const clients = body?.data ?? body;
-        if (Array.isArray(clients)) {
-          const match = clients.find(
-            (c: { email?: string }) => c.email === clientEmail,
-          );
-          clientUserId = match?.id ?? match?.userId ?? "";
-        }
-      }
-    }
-
-    // Skipping this test if we cannot derive the client user id — the
-    // /projects/:projectId/clients endpoint needs it to link the user.
-    test.skip(
-      !clientUserId,
-      "Could not resolve client user id via members/clients APIs",
-    );
+    const clientUserId = client.userId;
 
     const assignRes = await ownerPage.request.put(
       `${API}/projects/${projectId}`,

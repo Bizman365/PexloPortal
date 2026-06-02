@@ -50,6 +50,10 @@ export default defineConfig({
       url: "http://localhost:3001/api/health",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // Enable the gated e2e test-auth path so SessionMiddleware resolves the
+      // seeded user from the `e2e-test-user` cookie without calling WorkOS.
+      // Never set in production (prod docker-compose env is explicit).
+      env: { ...process.env, E2E_TEST_MODE: "true" },
     },
     {
       command: process.env.CI
@@ -58,6 +62,14 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // The browser-side apiFetch builds request URLs from NEXT_PUBLIC_API_URL.
+      // Without it, API_URL falls back to "" and every /api/* call hits the web
+      // origin (:3000) instead of the API (:3001) -> 404. Pin it for e2e.
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_API_URL:
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
+      },
     },
   ],
 });

@@ -150,6 +150,13 @@ export class AuthService {
       throw new UnauthorizedException("Password verification failed.");
     }
 
+    // E2E seed-auth users are DB-only and intentionally have no WorkOS
+    // password. Keep account-deletion tests vendor-decoupled while preserving
+    // the same non-empty password requirement enforced by DeleteAccountDto.
+    if (process.env.E2E_TEST_MODE === "true" && password.length > 0) {
+      return;
+    }
+
     try {
       await this.workos.userManagement.authenticateWithPassword({
         clientId: this.config.getOrThrow<string>("WORKOS_CLIENT_ID"),

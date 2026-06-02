@@ -75,6 +75,10 @@ export default async function PortalLayout({
 }) {
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") || "";
+  const search = headersList.get("x-search") || "";
+  const isPreviewRequest = new URLSearchParams(
+    search.startsWith("?") ? search.slice(1) : search,
+  ).has("previewAs");
   const isClientAuthSurface =
     pathname.startsWith("/portal/status") ||
     pathname.startsWith("/status") ||
@@ -107,7 +111,7 @@ export default async function PortalLayout({
   // Anyone arriving via post-auth handleAuth() landing, a bookmark, or a deep
   // link gets routed correctly here.
   const role = session.member?.role;
-  if (role === "owner" || role === "admin") {
+  if ((role === "owner" || role === "admin") && !isPreviewRequest) {
     redirect("/dashboard");
   }
 

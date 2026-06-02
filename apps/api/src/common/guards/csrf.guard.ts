@@ -17,6 +17,9 @@ const TOKEN_LENGTH = 32;
 const SESSION_COOKIE_NAMES = [
   process.env.WORKOS_COOKIE_NAME || "wos-session",
   "wos-session",
+  // Gated e2e session marker. Only meaningful when E2E_TEST_MODE === "true"
+  // (never set in production); harmless otherwise since the cookie won't exist.
+  ...(process.env.E2E_TEST_MODE === "true" ? ["e2e-test-user"] : []),
 ];
 
 @Injectable()

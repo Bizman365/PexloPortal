@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
+import { DEFAULT_BRANDING } from "@atrium/shared";
 import { BrandingService } from "./branding.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { ConfigService } from "@nestjs/config";
@@ -35,8 +36,8 @@ describe("BrandingService", () => {
     const result = await service.findByOrg("org-1");
     expect(result).toEqual({
       organizationId: "org-1",
-      primaryColor: null,
-      accentColor: null,
+      primaryColor: DEFAULT_BRANDING.primaryColor,
+      accentColor: DEFAULT_BRANDING.accentColor,
       logoKey: null,
       logoUrl: null,
       hideLogo: false,

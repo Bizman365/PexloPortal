@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, seedUser } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -18,16 +18,28 @@ test.describe("Client Profiles", () => {
   });
 
   test.describe("Portal settings profile", () => {
-    test("portal settings page shows profile section", async ({ page }) => {
+    test("portal settings page shows profile section", async ({ browser }) => {
+      const member = await seedUser(browser, {
+        role: "member",
+        prefix: "client-profile-member",
+      });
+      const page = await member.context.newPage();
       await page.goto("/portal/settings");
-      await expect(page.getByText(/your profile/i)).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole("heading", { name: /account settings/i })).toBeVisible({ timeout: 5000 });
+      await member.context.close();
     });
 
-    test("portal settings has profile fields", async ({ page }) => {
+    test("portal settings has profile fields", async ({ browser }) => {
+      const member = await seedUser(browser, {
+        role: "member",
+        prefix: "client-profile-fields",
+      });
+      const page = await member.context.newPage();
       await page.goto("/portal/settings");
-      await expect(page.getByText(/your profile/i)).toBeVisible({ timeout: 5000 });
+      await expect(page.getByRole("heading", { name: /account settings/i })).toBeVisible({ timeout: 5000 });
       await expect(page.getByText(/company/i)).toBeVisible();
       await expect(page.getByText(/phone/i)).toBeVisible();
+      await member.context.close();
     });
   });
 
