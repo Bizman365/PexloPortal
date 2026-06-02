@@ -22,6 +22,18 @@ export class TimeEntryCaptureService {
 
   async captureTaskCompletion(input: CaptureTaskCompletionInput): Promise<void> {
     try {
+      const existingCapture = await this.prisma.pendingTimeCapture.findFirst({
+        where: {
+          organizationId: input.orgId,
+          projectId: input.projectId,
+          taskId: input.taskId,
+          kind: "task_done",
+          resolvedAt: null,
+        },
+        select: { id: true },
+      });
+      if (existingCapture) return;
+
       const running = await this.prisma.timeEntry.findFirst({
         where: {
           organizationId: input.orgId,
@@ -34,18 +46,24 @@ export class TimeEntryCaptureService {
 
       const text = `Completed: ${input.taskTitle}`;
       if (running) {
-        await this.prisma.timeEntryLog.create({
-          data: {
-            timeEntryId: running.id,
-            organizationId: input.orgId,
-            userId: running.userId,
-            kind: "task_done",
-            text,
-            taskId: input.taskId,
-            actorType: input.actorType,
-          },
-        });
-        return;
+        try {
+          await this.prisma.timeEntryLog.create({
+            data: {
+              timeEntryId: running.id,
+              organizationId: input.orgId,
+              userId: running.userId,
+              kind: "task_done",
+              text,
+              taskId: input.taskId,
+              actorType: input.actorType,
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err, input, timeEntryId: running.id },
+            "Failed to append task completion log to running timer",
+          );
+        }
       }
 
       const actorLabel = input.actorName?.trim() || (input.actorType === "agent" ? "Agent" : "User");
