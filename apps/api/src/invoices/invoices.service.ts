@@ -19,6 +19,7 @@ import {
 interface InvoiceWhereInput {
   organizationId?: string;
   projectId?: string;
+  billingClientId?: string;
   status?: string;
 }
 
@@ -295,9 +296,10 @@ export class InvoicesService {
   }
 
   async findAll(orgId: string, query: InvoiceListQueryDto) {
-    const { page = 1, limit = 20, projectId, status } = query;
+    const { page = 1, limit = 20, projectId, billingClientId, status } = query;
     const where: InvoiceWhereInput = { organizationId: orgId };
     if (projectId) where.projectId = projectId;
+    if (billingClientId) where.billingClientId = billingClientId;
     if (status) where.status = status;
 
     const [data, total] = await Promise.all([
@@ -307,6 +309,7 @@ export class InvoicesService {
           lineItems: true,
           uploadedFile: true,
           project: { select: { id: true, name: true } },
+          billingClient: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
@@ -334,6 +337,7 @@ export class InvoicesService {
         lineItems: true,
         uploadedFile: true,
         project: { select: { id: true, name: true } },
+        billingClient: { select: { id: true, name: true } },
       },
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
