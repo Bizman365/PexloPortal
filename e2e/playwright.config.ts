@@ -62,6 +62,14 @@ export default defineConfig({
       url: "http://localhost:3000",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // The browser-side apiFetch builds request URLs from NEXT_PUBLIC_API_URL.
+      // Without it, API_URL falls back to "" and every /api/* call hits the web
+      // origin (:3000) instead of the API (:3001) -> 404. Pin it for e2e.
+      env: {
+        ...process.env,
+        NEXT_PUBLIC_API_URL:
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
+      },
     },
   ],
 });
