@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Prisma } from "@atrium/database";
 import { PrismaService } from "../prisma/prisma.service";
 import { TimeEntryCaptureService } from "../time-entries/time-entry-capture.service";
 import type { CurrentApiKeyContext } from "./decorators/current-api-key.decorator";

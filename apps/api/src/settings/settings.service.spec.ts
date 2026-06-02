@@ -16,11 +16,7 @@ const mockLogger = {
   error: mock(() => {}),
 };
 
-function makePrisma(overrides: Partial<typeof basePrisma> = {}) {
-  return { ...basePrisma, ...overrides };
-}
-
-const basePrisma = {
+const _basePrisma = {
   systemSettings: {
     upsert: mock(() => Promise.resolve(baseSettings())),
     findUnique: mock(() => Promise.resolve(null)),
@@ -67,7 +63,7 @@ function makeConfig(overrides: Record<string, string | undefined> = {}) {
 
 describe("SettingsService", () => {
   let service: SettingsService;
-  let prisma: typeof basePrisma;
+  let prisma: typeof _basePrisma;
   let config: ReturnType<typeof makeConfig>;
 
   beforeEach(() => {
