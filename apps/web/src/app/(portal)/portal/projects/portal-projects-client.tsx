@@ -61,7 +61,7 @@ export function PortalProjectsClient() {
             Your projects, at a glance.
           </h1>
           <p className="mt-5 text-base leading-7 text-pexlo-ink-soft sm:text-lg">
-            Track active work, completion, and the latest project movement from one read-only client surface.
+            Track active work, completion, and the latest movement across your projects.
           </p>
         </div>
 
