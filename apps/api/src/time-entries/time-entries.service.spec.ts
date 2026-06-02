@@ -735,7 +735,7 @@ describe("TimeEntriesService.billingClientId filters", () => {
     expect(report.byProject.map((bucket) => bucket.projectId).sort()).toEqual([projectId, otherClientProject.id].sort());
   });
 
-  it("generateInvoice with billingClientId spans projects and excludes ineligible entries", async () => {
+  it("generateInvoice with billingClientId persists the client link, spans projects, and excludes ineligible entries", async () => {
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const billingClient = await prisma.billingClient.create({
       data: { organizationId: orgId, name: `CSP ${stamp}`, slug: `csp-${stamp}` },
@@ -793,6 +793,7 @@ describe("TimeEntriesService.billingClientId filters", () => {
       include: { lineItems: true },
     });
     expect(generated?.projectId).toBeNull();
+    expect(generated?.billingClientId).toBe(billingClient.id);
     expect(generated?.lineItems.length).toBe(2);
     const total = generated!.lineItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
     expect(total).toBe(5000 + 7500);

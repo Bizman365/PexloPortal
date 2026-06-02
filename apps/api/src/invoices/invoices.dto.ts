@@ -190,6 +190,10 @@ export class InvoiceListQueryDto extends PaginationQueryDto {
 
   @IsString()
   @IsOptional()
+  billingClientId?: string;
+
+  @IsString()
+  @IsOptional()
   @IsIn(["draft", "sent", "paid", "overdue", "cancelled"])
   status?: string;
 }

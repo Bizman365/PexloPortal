@@ -291,6 +291,36 @@ describe("InvoicesService", () => {
     expect(stats.outstandingAmount).toBe(0);
   });
 
+  test("findAll filters by billingClientId and includes billingClient", async () => {
+    const invoice = {
+      id: "inv-client-1",
+      organizationId: orgId,
+      billingClientId: "bc-1",
+      billingClient: { id: "bc-1", name: "City Safe Partners" },
+      lineItems: [],
+      uploadedFile: null,
+      project: null,
+    };
+    prisma.invoice.findMany.mockImplementation(() => Promise.resolve([invoice]));
+    prisma.invoice.count.mockImplementation(() => Promise.resolve(1));
+
+    const result = await service.findAll(orgId, { billingClientId: "bc-1" });
+
+    expect(prisma.invoice.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { organizationId: orgId, billingClientId: "bc-1" },
+      include: expect.objectContaining({
+        lineItems: true,
+        uploadedFile: true,
+        project: { select: { id: true, name: true } },
+        billingClient: { select: { id: true, name: true } },
+      }),
+    }));
+    expect(prisma.invoice.count).toHaveBeenCalledWith({
+      where: { organizationId: orgId, billingClientId: "bc-1" },
+    });
+    expect(result.data[0].billingClient).toEqual({ id: "bc-1", name: "City Safe Partners" });
+  });
+
   // --- findOne ---
 
   test("findOne throws NotFoundException when invoice does not exist", async () => {
