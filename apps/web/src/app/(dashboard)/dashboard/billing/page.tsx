@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast";
 import { apiFetch, fetchAllPages } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { formatHours } from "@/lib/format-duration";
+import { BillingInvoicesSection } from "./billing-invoices-section";
 
 interface BillingClient {
   id: string;
@@ -690,6 +691,7 @@ export default function BillingPage(): React.ReactElement {
   const [reportLoading, setReportLoading] = useState<boolean>(false);
   const [generating, setGenerating] = useState<boolean>(false);
   const [recordModalOpen, setRecordModalOpen] = useState<boolean>(false);
+  const [invoiceRefreshKey, setInvoiceRefreshKey] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const selectedClient = clients.find((client) => client.id === clientId) ?? null;
@@ -813,6 +815,7 @@ export default function BillingPage(): React.ReactElement {
       );
       success(`Draft invoice created: ${response.invoiceId}`);
       await loadReports();
+      setInvoiceRefreshKey((current) => current + 1);
     } catch (err) {
       console.error(err);
       const message = err instanceof Error ? err.message : "Failed to generate invoice";
@@ -844,7 +847,10 @@ export default function BillingPage(): React.ReactElement {
           to={to}
           notInvoicedReport={filteredNotInvoiced}
           onClose={() => setRecordModalOpen(false)}
-          onRecorded={loadReports}
+          onRecorded={async () => {
+            await loadReports();
+            setInvoiceRefreshKey((current) => current + 1);
+          }}
         />
       )}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1035,6 +1041,8 @@ export default function BillingPage(): React.ReactElement {
           </div>
         </>
       )}
+
+      <BillingInvoicesSection clients={clients} refreshKey={invoiceRefreshKey} />
     </div>
   );
 }
