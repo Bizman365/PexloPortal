@@ -326,7 +326,7 @@ export class TasksService {
       })
       .catch((err) => this.logger.warn({ err }, "Failed to log decision closed activity"));
 
-    this.timeEntryCapture.captureTaskCompletion({
+    await this.timeEntryCapture.captureTaskCompletion({
       orgId,
       projectId: task.projectId,
       taskId: task.id,
@@ -383,7 +383,7 @@ export class TasksService {
     }
 
     if (dto.status === "done" && task.status !== "done") {
-      this.timeEntryCapture.captureTaskCompletion({
+      await this.timeEntryCapture.captureTaskCompletion({
         orgId,
         projectId: task.projectId,
         taskId: task.id,

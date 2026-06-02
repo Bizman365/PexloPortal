@@ -47,6 +47,12 @@ export interface TaskDetailLabel {
 export type TaskDetailViewer = "agency" | "client";
 
 const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
+const PENDING_CAPTURE_LOOKUP_TIMEOUT_MS = 3000;
+const PENDING_CAPTURE_RETRY_INTERVAL_MS = 250;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function TaskDetailModal({
   task,
@@ -172,16 +178,37 @@ export function TaskDetailModal({
     }
   };
 
-  const findPendingCaptureForTask = useCallback(async (): Promise<PendingCapture | null> => {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 150));
+  const findPendingCaptureForTask = useCallback(async (): Promise<PendingCapture> => {
+    const deadline = Date.now() + PENDING_CAPTURE_LOOKUP_TIMEOUT_MS;
+    let attempts = 0;
+    let lastError: unknown = null;
+
+    while (Date.now() <= deadline) {
+      attempts += 1;
+      try {
+        const captures = await apiFetch<PendingCapture[]>("/time-entries/pending-captures");
+        const capture = captures.find((item) => item.taskId === task.id) ?? null;
+        if (capture) return capture;
+        lastError = null;
+      } catch (err) {
+        lastError = err;
       }
-      const captures = await apiFetch<PendingCapture[]>("/time-entries/pending-captures");
-      const capture = captures.find((item) => item.taskId === task.id) ?? null;
-      if (capture) return capture;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await delay(Math.min(PENDING_CAPTURE_RETRY_INTERVAL_MS, remaining));
     }
-    return null;
+
+    if (lastError) {
+      const message = lastError instanceof Error ? lastError.message : "unknown error";
+      throw new Error(
+        `Task marked done, but the time prompt could not load after ${attempts} checks: ${message}`,
+      );
+    }
+
+    throw new Error(
+      `Task marked done, but no pending time prompt appeared after ${attempts} checks. Open the Time tab to log it later.`,
+    );
   }, [task.id]);
 
   const handleStatusChange = async (next: string) => {
@@ -195,10 +222,10 @@ export function TaskDetailModal({
       return;
     }
 
-    if (next === "done" && prev !== "done") {
+    if (isAgency && next === "done" && prev !== "done") {
       try {
         const capture = await findPendingCaptureForTask();
-        if (capture) setResolveCapture(capture);
+        setResolveCapture(capture);
       } catch (err) {
         showError(err instanceof Error ? err.message : "Task marked done, but time prompt could not load");
       }

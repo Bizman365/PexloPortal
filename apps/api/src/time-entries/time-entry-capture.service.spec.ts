@@ -1,7 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
 import { TimeEntryCaptureService } from "./time-entry-capture.service";
 
-function makeService(running: { id: string; userId: string } | null) {
+function makeService(
+  running: { id: string; userId: string } | null,
+  existingCapture: { id: string } | null = null,
+) {
   const prisma = {
     timeEntry: {
       findFirst: mock(async () => running),
@@ -10,6 +13,7 @@ function makeService(running: { id: string; userId: string } | null) {
       create: mock(async (args: unknown) => args),
     },
     pendingTimeCapture: {
+      findFirst: mock(async () => existingCapture),
       create: mock(async (args: unknown) => args),
     },
   };
@@ -33,6 +37,16 @@ describe("TimeEntryCaptureService", () => {
 
     await service.captureTaskCompletion(input);
 
+    expect(prisma.pendingTimeCapture.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId: "org_1",
+        projectId: "proj_1",
+        taskId: "task_1",
+        kind: "task_done",
+        resolvedAt: null,
+      },
+      select: { id: true },
+    });
     expect(prisma.timeEntry.findFirst).toHaveBeenCalledWith({
       where: { organizationId: "org_1", projectId: "proj_1", endedAt: null },
       select: { id: true, userId: true },
@@ -49,7 +63,17 @@ describe("TimeEntryCaptureService", () => {
         actorType: "agent",
       },
     });
-    expect(prisma.pendingTimeCapture.create).not.toHaveBeenCalled();
+    expect(prisma.pendingTimeCapture.create).toHaveBeenCalledWith({
+      data: {
+        organizationId: "org_1",
+        projectId: "proj_1",
+        taskId: "task_1",
+        kind: "task_done",
+        label: "API key pxl_1234 completed “Wire invoices”",
+        completedByType: "agent",
+        completedByName: "API key pxl_1234",
+      },
+    });
   });
 
   it("creates a pending capture when no timer is running", async () => {
@@ -71,11 +95,39 @@ describe("TimeEntryCaptureService", () => {
     });
   });
 
+  it("does not create a duplicate unresolved task_done capture", async () => {
+    const { service, prisma } = makeService(
+      { id: "entry_1", userId: "user_1" },
+      { id: "capture_1" },
+    );
+
+    await service.captureTaskCompletion(input);
+
+    expect(prisma.pendingTimeCapture.findFirst).toHaveBeenCalledWith({
+      where: {
+        organizationId: "org_1",
+        projectId: "proj_1",
+        taskId: "task_1",
+        kind: "task_done",
+        resolvedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(prisma.timeEntry.findFirst).not.toHaveBeenCalled();
+    expect(prisma.timeEntryLog.create).not.toHaveBeenCalled();
+    expect(prisma.pendingTimeCapture.create).not.toHaveBeenCalled();
+  });
+
   it("swallows capture failures so task completion is best-effort", async () => {
     const prisma = {
-      timeEntry: { findFirst: mock(async () => { throw new Error("db unavailable"); }) },
+      timeEntry: { findFirst: mock(async () => null) },
       timeEntryLog: { create: mock(async () => undefined) },
-      pendingTimeCapture: { create: mock(async () => undefined) },
+      pendingTimeCapture: {
+        findFirst: mock(async () => {
+          throw new Error("db unavailable");
+        }),
+        create: mock(async () => undefined),
+      },
     };
     const logger = { warn: mock(() => undefined) };
     const service = new TimeEntryCaptureService(prisma as never, logger as never);
