@@ -42,6 +42,7 @@ export async function seedUser(
     orgId?: string;
     orgName?: string;
     setupCompleted?: boolean;
+    name?: string;
   } = {},
 ): Promise<SeededUser> {
   const db = prisma();
@@ -65,7 +66,7 @@ export async function seedUser(
   const user = await db.user.create({
     data: {
       id: randomUUID(),
-      name: `${prefix} user`,
+      name: opts.name ?? `${prefix} user`,
       email,
       emailVerified: true,
     },

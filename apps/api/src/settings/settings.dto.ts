@@ -98,7 +98,7 @@ export class SaveCustomDomainDto {
   )
   @IsString()
   @MaxLength(253)
-  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$/, {
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, {
     message: "domain must be a valid hostname (e.g. portal.example.com)",
   })
   domain!: string;
