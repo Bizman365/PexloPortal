@@ -137,7 +137,7 @@ test.describe("System Settings", () => {
     });
 
     await page.goto("/dashboard");
-    await expect(page.getByText(/help improve atrium/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/help improve pexlo portal/i)).toBeVisible({ timeout: 5000 });
     await expect(page.getByRole("button", { name: /share anonymously/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /no thanks/i })).toBeVisible();
   });
@@ -151,7 +151,7 @@ test.describe("System Settings", () => {
 
     await page.goto("/dashboard");
     await page.getByRole("button", { name: /share anonymously/i }).click();
-    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/help improve pexlo portal/i)).not.toBeVisible({ timeout: 5000 });
   });
 
   test("declining telemetry consent banner dismisses it", async ({ page, request }) => {
@@ -163,7 +163,7 @@ test.describe("System Settings", () => {
 
     await page.goto("/dashboard");
     await page.getByRole("button", { name: /no thanks/i }).click();
-    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/help improve pexlo portal/i)).not.toBeVisible({ timeout: 5000 });
   });
 
   test("consent banner does not appear when preference already set", async ({ page, request }) => {
@@ -174,6 +174,6 @@ test.describe("System Settings", () => {
     });
 
     await page.goto("/dashboard");
-    await expect(page.getByText(/help improve atrium/i)).not.toBeVisible({ timeout: 3000 });
+    await expect(page.getByText(/help improve pexlo portal/i)).not.toBeVisible({ timeout: 3000 });
   });
 });
