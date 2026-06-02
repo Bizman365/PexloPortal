@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getCsrfToken } from "./helpers";
+import { getCsrfToken, seedUser } from "./helpers";
 
 const API = "http://localhost:3001/api";
 
@@ -24,7 +24,12 @@ test.describe("Files", () => {
     }
   });
 
-  test("portal project page does not show upload button for clients", async ({ page }) => {
+  test("portal project page does not show upload button for clients", async ({ browser }) => {
+    const member = await seedUser(browser, {
+      role: "member",
+      prefix: "files-client",
+    });
+    const page = await member.context.newPage();
     await page.goto("/portal/projects");
     await expect(
       page.getByRole("heading", { name: /your projects/i }),
@@ -39,6 +44,7 @@ test.describe("Files", () => {
       // Upload button should NOT be visible on the portal (client) view
       await expect(page.getByText(/upload file/i)).not.toBeVisible();
     }
+    await member.context.close();
   });
 
   test("file upload rejects when no file selected", async ({ page, context }) => {

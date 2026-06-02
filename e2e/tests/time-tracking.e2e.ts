@@ -204,8 +204,21 @@ test.describe("Time tracking", () => {
       timeout: 5000,
     });
 
-    // Submit with default (no date filter, billable only)
+    // Clear the default month-to-date filters so the yesterday-seeded entry
+    // is included, then submit with billable-only defaults.
+    const generateModal = page.locator("form", {
+      hasText: /generate invoice from time/i,
+    });
+    await generateModal.locator('input[type="date"]').nth(0).fill("");
+    await generateModal.locator('input[type="date"]').nth(1).fill("");
+    const generateResponse = page.waitForResponse(
+      (res) =>
+        res.url().includes("/api/time-entries/generate-invoice") &&
+        res.request().method() === "POST",
+      { timeout: 10000 },
+    );
     await page.getByRole("button", { name: /generate draft/i }).click();
+    expect((await generateResponse).ok()).toBeTruthy();
 
     // A new invoice (INV-XXXX) should appear in the project's invoices list.
     await expect(page.getByText(/INV-/).first()).toBeVisible({
