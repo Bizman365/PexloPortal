@@ -63,11 +63,9 @@ export function BrandingPageSection(): React.ReactElement {
             hideLogo: branding.hideLogo ?? false,
           }),
         }),
-        fetch(`${API_URL}/api/auth/organization/update`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: { name: orgName.trim() } }),
-          credentials: "include",
+        apiFetch("/settings/organization", {
+          method: "PATCH",
+          body: JSON.stringify({ name: orgName.trim() }),
         }),
       ]);
       success("Workspace saved");
