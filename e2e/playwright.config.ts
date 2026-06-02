@@ -50,6 +50,10 @@ export default defineConfig({
       url: "http://localhost:3001/api/health",
       reuseExistingServer: !process.env.CI,
       cwd: "../",
+      // Enable the gated e2e test-auth path so SessionMiddleware resolves the
+      // seeded user from the `e2e-test-user` cookie without calling WorkOS.
+      // Never set in production (prod docker-compose env is explicit).
+      env: { ...process.env, E2E_TEST_MODE: "true" },
     },
     {
       command: process.env.CI
