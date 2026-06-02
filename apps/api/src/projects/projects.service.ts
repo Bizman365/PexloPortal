@@ -215,13 +215,33 @@ export class ProjectsService {
     const [data, total] = await Promise.all([
       this.prisma.project.findMany({
         where,
+        include: {
+          tasks: {
+            where: { clientVisible: true },
+            select: { status: true, completedAt: true },
+          },
+        },
         orderBy: { createdAt: "desc" },
         ...paginationArgs(page, limit),
       }),
       this.prisma.project.count({ where }),
     ]);
 
-    return paginatedResponse(data, total, page, limit);
+    const projects = data.map(({ tasks, ...project }) => {
+      const taskCount = tasks.length;
+      const completedTaskCount = tasks.filter((task) => task.completedAt || task.status === "done").length;
+      const completionPercent = taskCount === 0 ? 0 : Math.round((completedTaskCount / taskCount) * 100);
+
+      return {
+        ...project,
+        taskCount,
+        completedTaskCount,
+        completionPercent,
+        lastUpdatedAt: project.updatedAt,
+      };
+    });
+
+    return paginatedResponse(projects, total, page, limit);
   }
 
   async create(data: CreateProjectDto, organizationId: string) {
