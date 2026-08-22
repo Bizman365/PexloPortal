@@ -1,8 +1,116 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
-import type { APIRequestContext, BrowserContext } from "@playwright/test";
+import { randomBytes, randomUUID } from "node:crypto";
+import type {
+  APIRequestContext,
+  BrowserContext,
+  Browser,
+} from "@playwright/test";
+import { PrismaClient } from "../../packages/database/src";
 
 const API = "http://localhost:3001/api";
+
+// Single shared Prisma client for e2e seeding (vendor-decoupled auth).
+let _prisma: PrismaClient | null = null;
+function prisma(): PrismaClient {
+  if (!_prisma) _prisma = new PrismaClient();
+  return _prisma;
+}
+
+export interface SeededUser {
+  context: BrowserContext;
+  userId: string;
+  orgId: string;
+  email: string;
+  csrfToken: string;
+}
+
+/**
+ * Seed a user + organization + membership directly into the test DB and return
+ * an authenticated browser context (carrying the gated `e2e-test-user` cookie
+ * + a matching `csrf-token`). No WorkOS call — the API resolves this user via
+ * the E2E_TEST_MODE path in SessionMiddleware.
+ *
+ * Use this instead of the removed Better Auth signup/invite endpoints. Pass an
+ * existing `orgId` to add a second member (e.g. a client) to the same org.
+ */
+export async function seedUser(
+  browser: Browser,
+  opts: {
+    role?: string;
+    prefix?: string;
+    orgId?: string;
+    orgName?: string;
+    setupCompleted?: boolean;
+    name?: string;
+  } = {},
+): Promise<SeededUser> {
+  const db = prisma();
+  const role = opts.role ?? "owner";
+  const prefix = opts.prefix ?? "e2e";
+  const email = `${prefix}-${Date.now()}-${randomBytes(2).toString("hex")}@test.local`;
+
+  let orgId = opts.orgId;
+  if (!orgId) {
+    const org = await db.organization.create({
+      data: {
+        id: randomUUID(),
+        name: opts.orgName ?? `${prefix} Org`,
+        slug: `${prefix}-org-${randomBytes(3).toString("hex")}`,
+        setupCompleted: opts.setupCompleted ?? true,
+      },
+    });
+    orgId = org.id;
+  }
+
+  const user = await db.user.create({
+    data: {
+      id: randomUUID(),
+      name: opts.name ?? `${prefix} user`,
+      email,
+      emailVerified: true,
+    },
+  });
+
+  await db.member.create({
+    data: {
+      id: randomUUID(),
+      organizationId: orgId,
+      userId: user.id,
+      role,
+    },
+  });
+
+  const csrfToken = randomBytes(32).toString("hex");
+  const context = await browser.newContext({ storageState: undefined });
+  await context.addCookies([
+    {
+      name: "e2e-test-user",
+      value: user.id,
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "csrf-token",
+      value: csrfToken,
+      domain: "localhost",
+      path: "/",
+      sameSite: "Lax",
+    },
+  ]);
+
+  return { context, userId: user.id, orgId, email, csrfToken };
+}
+
+/** Disconnect the shared seed Prisma client (call in a global teardown if needed). */
+export async function closeSeedClient(): Promise<void> {
+  if (_prisma) {
+    await _prisma.$disconnect();
+    _prisma = null;
+  }
+}
 
 /**
  * Read the CSRF token from the stored auth state file written by global-setup.

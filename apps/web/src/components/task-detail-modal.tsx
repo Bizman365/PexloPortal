@@ -9,6 +9,7 @@ import { CommentsSection } from "@/components/comments-section";
 import { LabelBadge } from "@/components/label-badge";
 import { Avatar } from "@/components/avatar";
 import { ColorPatchGrid, PRESET_COLORS } from "@/components/color-patch-grid";
+import { ResolvePendingCaptureModal, type PendingCapture } from "@/components/log-time-modal";
 import { TASK_STATUS_OPTIONS } from "@/lib/task-status";
 
 export interface TaskDetailRecord {
@@ -46,6 +47,12 @@ export interface TaskDetailLabel {
 export type TaskDetailViewer = "agency" | "client";
 
 const STATUS_OPTIONS = TASK_STATUS_OPTIONS;
+const PENDING_CAPTURE_LOOKUP_TIMEOUT_MS = 3000;
+const PENDING_CAPTURE_RETRY_INTERVAL_MS = 250;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export function TaskDetailModal({
   task,
@@ -95,14 +102,20 @@ export function TaskDetailModal({
   const [newLabelColor, setNewLabelColor] = useState<string>(PRESET_COLORS[0].hex);
   const [savingLabel, setSavingLabel] = useState(false);
   const [labelError, setLabelError] = useState("");
+  const [resolveCapture, setResolveCapture] = useState<PendingCapture | null>(null);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (resolveCapture) {
+        setResolveCapture(null);
+        return;
+      }
+      onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, resolveCapture]);
 
   const patch = useCallback(
     async (body: Record<string, unknown>) => {
@@ -165,6 +178,39 @@ export function TaskDetailModal({
     }
   };
 
+  const findPendingCaptureForTask = useCallback(async (): Promise<PendingCapture> => {
+    const deadline = Date.now() + PENDING_CAPTURE_LOOKUP_TIMEOUT_MS;
+    let attempts = 0;
+    let lastError: unknown = null;
+
+    while (Date.now() <= deadline) {
+      attempts += 1;
+      try {
+        const captures = await apiFetch<PendingCapture[]>("/time-entries/pending-captures");
+        const capture = captures.find((item) => item.taskId === task.id) ?? null;
+        if (capture) return capture;
+        lastError = null;
+      } catch (err) {
+        lastError = err;
+      }
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await delay(Math.min(PENDING_CAPTURE_RETRY_INTERVAL_MS, remaining));
+    }
+
+    if (lastError) {
+      const message = lastError instanceof Error ? lastError.message : "unknown error";
+      throw new Error(
+        `Task marked done, but the time prompt could not load after ${attempts} checks: ${message}`,
+      );
+    }
+
+    throw new Error(
+      `Task marked done, but no pending time prompt appeared after ${attempts} checks. Open the Time tab to log it later.`,
+    );
+  }, [task.id]);
+
   const handleStatusChange = async (next: string) => {
     if (next === status) return;
     const prev = status;
@@ -173,6 +219,16 @@ export function TaskDetailModal({
       await patch({ status: next });
     } catch {
       setStatus(prev);
+      return;
+    }
+
+    if (isAgency && next === "done" && prev !== "done") {
+      try {
+        const capture = await findPendingCaptureForTask();
+        setResolveCapture(capture);
+      } catch (err) {
+        showError(err instanceof Error ? err.message : "Task marked done, but time prompt could not load");
+      }
     }
   };
 
@@ -828,6 +884,24 @@ export function TaskDetailModal({
           </div>
         </div>
       </div>
+      {resolveCapture && (
+        <ResolvePendingCaptureModal
+          capture={resolveCapture}
+          title="Log time for this task"
+          description={resolveCapture.task?.title ?? task.title}
+          cancelLabel="Skip / I'll log later"
+          onCancel={() => setResolveCapture(null)}
+          onResolve={async (durationSec, billable) => {
+            await apiFetch(`/time-entries/pending-captures/${resolveCapture.id}/resolve`, {
+              method: "POST",
+              body: JSON.stringify({ durationSec, billable }),
+            });
+            setResolveCapture(null);
+            success("Time logged");
+            onChange();
+          }}
+        />
+      )}
     </div>
   );
 }

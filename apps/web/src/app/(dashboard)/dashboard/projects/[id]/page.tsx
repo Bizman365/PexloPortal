@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
@@ -86,16 +86,6 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-function formatDateDisplay(dateStr: string): string {
-  const [year, month, day] = dateStr.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function DateField({
   label,
   value,
@@ -107,30 +97,19 @@ function DateField({
   onChange: (val: string) => void;
   disabled?: boolean;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-sm text-[var(--muted-foreground)] shrink-0">{label}</span>
-      <div className="relative">
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => inputRef.current?.showPicker()}
-          className="text-sm bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[140px] sm:w-[170px] text-right disabled:opacity-50 cursor-pointer hover:border-[var(--muted-foreground)] transition-colors"
-        >
-          {value ? formatDateDisplay(value) : <span className="text-[var(--muted-foreground)]">Select date</span>}
-        </button>
-        <input
-          ref={inputRef}
-          type="date"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className="absolute inset-0 opacity-0 pointer-events-none"
-          tabIndex={-1}
-        />
-      </div>
+      <label className="text-sm text-[var(--muted-foreground)] shrink-0" htmlFor={`project-${label.toLowerCase()}-date`}>
+        {label}
+      </label>
+      <input
+        id={`project-${label.toLowerCase()}-date`}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="text-sm bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[140px] sm:w-[170px] text-right text-[var(--foreground)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer hover:border-[var(--muted-foreground)] transition-colors [color-scheme:light] dark:[color-scheme:dark]"
+      />
     </div>
   );
 }

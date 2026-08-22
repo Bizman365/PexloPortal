@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Test } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { LoggerModule } from "nestjs-pino";
 import { AgentModule } from "./agent.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { AllExceptionsFilter } from "../common";
@@ -33,7 +34,7 @@ describe("Agent API e2e", () => {
     db.projectStatuses.push({ organizationId: orgId, slug: "not_started" });
     db.members.push({ organizationId: orgId, userId: "user_1" });
 
-    const moduleRef = await Test.createTestingModule({ imports: [AgentModule] })
+    const moduleRef = await Test.createTestingModule({ imports: [LoggerModule.forRoot(), AgentModule] })
       .overrideProvider(PrismaService)
       .useValue(db)
       .compile();

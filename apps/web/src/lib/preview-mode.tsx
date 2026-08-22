@@ -47,7 +47,7 @@ export function startPreview(
     console.error("preview-mode handoff write failed", err);
   }
   const params = new URLSearchParams({ previewAs: clientUserId });
-  window.open(`/portal?${params.toString()}`, "_blank", "noopener");
+  window.open(`/portal/projects?${params.toString()}`, "_blank", "noopener");
 }
 
 function readHandoff(clientUserId: string): PreviewHandoff | null {

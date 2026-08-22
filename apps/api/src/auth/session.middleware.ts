@@ -6,6 +6,9 @@ import type { AuthenticatedRequest, AuthSession } from "../common";
 
 export const DEFAULT_WORKOS_SESSION_COOKIE = "wos-session";
 export const ACTIVE_ORG_COOKIE = "atrium-active-org";
+// E2E-only cookie carrying the seeded test user's id. Honored ONLY when
+// process.env.E2E_TEST_MODE === "true" (never set in production).
+export const E2E_TEST_USER_COOKIE = "e2e-test-user";
 
 // Must match the cookie attributes used when the session is first written in
 // auth.controller.ts (COOKIE_OPTIONS), so a refreshed re-seal overwrites the
@@ -32,6 +35,25 @@ export class SessionMiddleware implements NestMiddleware {
       Request;
 
     try {
+      // E2E test-auth path. STRICTLY gated behind E2E_TEST_MODE, which is never
+      // set in production (prod docker-compose lists its env explicitly and does
+      // not include this flag). When enabled, a signed-in test user is resolved
+      // directly from the DB via the `e2e-test-user` cookie (the user id), with
+      // NO WorkOS network call. This decouples the e2e suite from the live auth
+      // vendor (deterministic, no accumulating sandbox users, no rate limits).
+      if (process.env.E2E_TEST_MODE === "true") {
+        const testUserId = req.cookies?.[E2E_TEST_USER_COOKIE];
+        if (testUserId) {
+          const testUser = await this.prisma.user.findUnique({
+            where: { id: testUserId },
+          });
+          if (testUser) {
+            await this.attachUserToRequest(authReq, testUser, testUserId, req);
+          }
+          return next();
+        }
+      }
+
       const cookieName = this.authService.getWorkOSCookieName();
       const sessionData =
         req.cookies?.[cookieName] ?? req.cookies?.[DEFAULT_WORKOS_SESSION_COOKIE];
@@ -84,45 +106,59 @@ export class SessionMiddleware implements NestMiddleware {
       // AuthGuard rejects. Phase 3 links/provisions Prisma users.
       if (!user) return next();
 
-      authReq.user = user;
-      authReq.session = {
-        id: sessionId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        token: sessionId,
-        createdAt: user.createdAt,
-        updatedAt: new Date(),
-        ipAddress: req.ip ?? null,
-        userAgent: req.get("user-agent") ?? null,
-        userId: user.id,
-        activeOrganizationId: null,
-      } satisfies AuthSession;
-
-      const memberships = await this.prisma.member.findMany({
-        where: { userId: user.id },
-        orderBy: { createdAt: "desc" },
-        include: {
-          organization: {
-            include: { members: true },
-          },
-        },
-      });
-
-      if (memberships.length === 0) return next();
-
-      const requestedOrgId = req.cookies?.[ACTIVE_ORG_COOKIE];
-      const selectedMembership =
-        memberships.find(
-          (membership) => membership.organizationId === requestedOrgId,
-        ) ?? memberships[0];
-
-      authReq.member = selectedMembership;
-      authReq.organization = selectedMembership.organization;
-      authReq.session.activeOrganizationId = selectedMembership.organizationId;
+      await this.attachUserToRequest(authReq, user, sessionId, req);
     } catch {
       // Session resolution failed — continue without auth.
       // The AuthGuard will reject unauthenticated requests.
     }
 
     next();
+  }
+
+  // Shared user/session/org resolution used by both the WorkOS path and the
+  // gated E2E test-auth path, so org selection stays identical in both.
+  private async attachUserToRequest(
+    authReq: Partial<
+      Pick<AuthenticatedRequest, "user" | "session" | "organization" | "member">
+    > &
+      Request,
+    user: { id: string; createdAt: Date },
+    sessionId: string,
+    req: Request,
+  ): Promise<void> {
+    authReq.user = user as AuthenticatedRequest["user"];
+    authReq.session = {
+      id: sessionId,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      token: sessionId,
+      createdAt: user.createdAt,
+      updatedAt: new Date(),
+      ipAddress: req.ip ?? null,
+      userAgent: req.get("user-agent") ?? null,
+      userId: user.id,
+      activeOrganizationId: null,
+    } satisfies AuthSession;
+
+    const memberships = await this.prisma.member.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      include: {
+        organization: {
+          include: { members: true },
+        },
+      },
+    });
+
+    if (memberships.length === 0) return;
+
+    const requestedOrgId = req.cookies?.[ACTIVE_ORG_COOKIE];
+    const selectedMembership =
+      memberships.find(
+        (membership) => membership.organizationId === requestedOrgId,
+      ) ?? memberships[0];
+
+    authReq.member = selectedMembership;
+    authReq.organization = selectedMembership.organization;
+    authReq.session.activeOrganizationId = selectedMembership.organizationId;
   }
 }

@@ -1,6 +1,7 @@
 import {
   IsOptional,
   IsString,
+  IsNotEmpty,
   IsEmail,
   IsInt,
   IsBoolean,
@@ -84,13 +85,20 @@ export class UpdateSettingsDto {
   telemetryEnabled?: boolean | null;
 }
 
+export class UpdateOrganizationDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  name!: string;
+}
+
 export class SaveCustomDomainDto {
   @Transform(({ value }) =>
     typeof value === "string" ? value.replace(/\.$/, "").toLowerCase() : value,
   )
   @IsString()
   @MaxLength(253)
-  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$/, {
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, {
     message: "domain must be a valid hostname (e.g. portal.example.com)",
   })
   domain!: string;

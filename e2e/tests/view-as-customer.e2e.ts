@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import type { Browser, Page } from "@playwright/test";
+import { getCsrfTokenFromContext, seedUser } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
@@ -8,92 +9,64 @@ async function createOwner(browser: Browser, prefix = "vac-owner"): Promise<{
   context: import("@playwright/test").BrowserContext;
   page: Page;
   email: string;
-  password: string;
+  orgId: string;
 }> {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
-  const orgName = `${prefix} Org ${Date.now().toString(36)}`;
-  const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-  const password = "ViewAs123!";
-
-  const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
-    data: { name: "VAC Owner", email, password, orgName },
-  });
-  if (!res.ok()) {
-    throw new Error(`Owner signup failed (${res.status()}): ${await res.text()}`);
-  }
+  const seeded = await seedUser(browser, { role: "owner", prefix });
+  const page = await seeded.context.newPage();
 
   await page.goto(`${WEB_URL}/dashboard`, {
     waitUntil: "networkidle",
     timeout: 15000,
   });
 
-  let url = page.url();
-  if (url.includes("/login")) {
-    await page.goto(`${WEB_URL}/login`);
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-    url = page.url();
-  }
-
-  if (url.includes("/setup")) {
-    const cookies = await context.cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
-    await page.request.post(`${API_URL}/api/setup/complete`, {
-      headers: { "x-csrf-token": csrfToken },
-    });
-    await page.goto(`${WEB_URL}/dashboard`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-  }
-
-  return { context, page, email, password };
+  return {
+    context: seeded.context,
+    page,
+    email: seeded.email,
+    orgId: seeded.orgId,
+  };
 }
 
-async function inviteAndAcceptClient(
+async function seedClientAndAssignProject(
   browser: Browser,
   ownerPage: Page,
+  ownerOrgId: string,
   prefix: string,
-): Promise<{ clientEmail: string; clientName: string; password: string }> {
-  const clientEmail = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-  const password = "Client123!";
-  const clientName = "Test Client VAC";
+): Promise<{ clientEmail: string; clientName: string; clientUserId: string }> {
+  const client = await seedUser(browser, {
+    role: "member",
+    prefix,
+    orgId: ownerOrgId,
+  });
+  const clientName = `${prefix} user`;
+  const ownerCsrf = await getCsrfTokenFromContext(ownerPage.context());
 
-  const inviteRes = await ownerPage.request.post(
-    `${API_URL}/api/auth/organization/invite-member`,
+  const projectRes = await ownerPage.request.post(`${API_URL}/api/projects`, {
+    data: { name: `${prefix} Project ${Date.now()}` },
+    headers: { "x-csrf-token": ownerCsrf },
+  });
+  expect(projectRes.ok()).toBeTruthy();
+  const project = await projectRes.json();
+
+  const assignRes = await ownerPage.request.put(
+    `${API_URL}/api/projects/${project.id}`,
     {
-      data: { email: clientEmail, role: "member" },
-      headers: { Origin: WEB_URL },
+      data: { clientUserIds: [client.userId] },
+      headers: {
+        "x-csrf-token": ownerCsrf,
+        "Content-Type": "application/json",
+      },
     },
   );
-  if (!inviteRes.ok()) {
-    throw new Error(`Invite failed (${inviteRes.status()}): ${await inviteRes.text()}`);
-  }
-  const inviteBody = await inviteRes.json();
-  const invitationId: string = inviteBody?.id || inviteBody?.invitation?.id;
-  if (!invitationId) {
-    throw new Error(`Could not extract invitation id from: ${JSON.stringify(inviteBody)}`);
-  }
+  expect(assignRes.ok()).toBeTruthy();
 
-  const clientCtx = await browser.newContext({ storageState: undefined });
-  const clientPage = await clientCtx.newPage();
-  await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitationId}`, {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  });
-  await clientPage.waitForSelector("#name", { state: "visible", timeout: 30000 });
-  await clientPage.waitForLoadState("networkidle", { timeout: 30000 });
-  await clientPage.locator("#name").fill(clientName);
-  await clientPage.locator("#email").fill(clientEmail);
-  await clientPage.locator("#password").fill(password);
-  await clientPage.getByRole("button", { name: /create account & join/i }).click();
-  await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
-  await clientCtx.close();
+  await client.context.close();
 
-  return { clientEmail, clientName, password };
+  return {
+    clientEmail: client.email,
+    clientName,
+    clientUserId: client.userId,
+  };
 }
 
 test.describe("View as customer", () => {
@@ -101,10 +74,12 @@ test.describe("View as customer", () => {
   test("owner can preview portal as a client and mutations are blocked", async ({
     browser,
   }) => {
-    const { context: ownerCtx, page: ownerPage } = await createOwner(browser);
-    const { clientEmail, clientName } = await inviteAndAcceptClient(
+    const { context: ownerCtx, page: ownerPage, orgId } =
+      await createOwner(browser);
+    const { clientEmail, clientName } = await seedClientAndAssignProject(
       browser,
       ownerPage,
+      orgId,
       "vac-client",
     );
 
@@ -174,13 +149,14 @@ test.describe("View as customer", () => {
   test("query params are stripped from URL after preview mode initializes", async ({
     browser,
   }) => {
-    const { context: ownerCtx, page: ownerPage } = await createOwner(
+    const { context: ownerCtx, page: ownerPage, orgId } = await createOwner(
       browser,
       "vac-strip",
     );
-    const { clientEmail } = await inviteAndAcceptClient(
+    const { clientEmail } = await seedClientAndAssignProject(
       browser,
       ownerPage,
+      orgId,
       "vac-strip-client",
     );
 
@@ -219,13 +195,14 @@ test.describe("View as customer", () => {
   }) => {
     // Navigate directly to /portal?previewAs=<id> without previewName/previewEmail.
     // The provider must fall back to "Client" / "" instead of crashing.
-    const { context: ownerCtx, page: ownerPage } = await createOwner(
+    const { context: ownerCtx, page: ownerPage, orgId } = await createOwner(
       browser,
       "vac-fallback",
     );
-    const { } = await inviteAndAcceptClient(
+    await seedClientAndAssignProject(
       browser,
       ownerPage,
+      orgId,
       "vac-fallback-client",
     );
 
@@ -244,10 +221,10 @@ test.describe("View as customer", () => {
       throw new Error("Could not find a member-role member to preview as");
     }
 
-    // Open /portal with only previewAs — deliberately omit previewName/previewEmail.
+    // Open /portal/projects with only previewAs — deliberately omit previewName/previewEmail.
     const portalPage = await ownerCtx.newPage();
     await portalPage.goto(
-      `${WEB_URL}/portal?previewAs=${clientMember.userId}`,
+      `${WEB_URL}/portal/projects?previewAs=${clientMember.userId}`,
       { waitUntil: "networkidle", timeout: 20000 },
     );
 
@@ -255,7 +232,7 @@ test.describe("View as customer", () => {
       timeout: 10000,
     });
     // Fallback name must render as "Client", not throw or show undefined/null.
-    await expect(portalPage.getByText("Client")).toBeVisible();
+    await expect(portalPage.getByText("Client", { exact: true })).toBeVisible();
 
     await ownerCtx.close();
   });

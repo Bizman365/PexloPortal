@@ -5,7 +5,21 @@ import { apiFetch, fetchAllPages } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
-import { UserPlus, Copy, Check, Trash2, ChevronDown, ChevronRight, UsersRound, Download, Sparkles, ExternalLink, KeyRound, X, Eye } from "lucide-react";
+import {
+  UserPlus,
+  Copy,
+  Check,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  UsersRound,
+  Download,
+  Sparkles,
+  ExternalLink,
+  KeyRound,
+  X,
+  Eye,
+} from "lucide-react";
 import { track } from "@/lib/track";
 import { startPreview } from "@/lib/preview-mode";
 import { LabelBadge } from "@/components/label-badge";
@@ -69,8 +83,10 @@ export default function PeoplePage() {
   const { success, error: showError } = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("team");
   const [planLimits, setPlanLimits] = useState<{
-    maxMembers: number; membersUsed: number;
-    maxClients: number; clientsUsed: number;
+    maxMembers: number;
+    membersUsed: number;
+    maxClients: number;
+    clientsUsed: number;
   } | null>(null);
 
   // Shared state
@@ -83,7 +99,9 @@ export default function PeoplePage() {
 
   // Team invite state
   const [teamEmail, setTeamEmail] = useState("");
-  const [teamInviteRole, setTeamInviteRole] = useState<"admin" | "owner">("admin");
+  const [teamInviteRole, setTeamInviteRole] = useState<"admin" | "owner">(
+    "admin",
+  );
   const [teamError, setTeamError] = useState("");
   const [teamInviteLink, setTeamInviteLink] = useState("");
   const [teamInviting, setTeamInviting] = useState(false);
@@ -97,7 +115,9 @@ export default function PeoplePage() {
   // Client list state
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Record<string, ClientProfile>>({});
-  const [editingProfile, setEditingProfile] = useState<Record<string, ClientProfile>>({});
+  const [editingProfile, setEditingProfile] = useState<
+    Record<string, ClientProfile>
+  >({});
   const [savingProfile, setSavingProfile] = useState<string | null>(null);
 
   const [resetLink, setResetLink] = useState<{
@@ -106,7 +126,9 @@ export default function PeoplePage() {
     emailSent: boolean;
     emailViaOrgConfig: boolean;
   } | null>(null);
-  const [resettingMemberId, setResettingMemberId] = useState<string | null>(null);
+  const [resettingMemberId, setResettingMemberId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     apiFetch<{ user: { id: string } }>("/auth/get-session")
@@ -143,8 +165,14 @@ export default function PeoplePage() {
   useEffect(() => {
     if (!config?.billingEnabled) return;
     Promise.all([
-      apiFetch<{ subscription: { plan: { maxMembers: number; maxClients: number } } | null }>("/billing/subscription").catch(() => null),
-      apiFetch<{ members: number; clients: number }>("/billing/usage").catch(() => null),
+      apiFetch<{
+        subscription: {
+          plan: { maxMembers: number; maxClients: number };
+        } | null;
+      }>("/billing/subscription").catch(() => null),
+      apiFetch<{ members: number; clients: number }>("/billing/usage").catch(
+        () => null,
+      ),
     ]).then(([sub, usage]) => {
       if (sub?.subscription?.plan && usage != null) {
         setPlanLimits({
@@ -157,8 +185,14 @@ export default function PeoplePage() {
     });
   }, [config?.billingEnabled]);
 
-  const atMemberLimit = planLimits !== null && planLimits.maxMembers !== -1 && planLimits.membersUsed >= planLimits.maxMembers;
-  const atClientLimit = planLimits !== null && planLimits.maxClients !== -1 && planLimits.clientsUsed >= planLimits.maxClients;
+  const atMemberLimit =
+    planLimits !== null &&
+    planLimits.maxMembers !== -1 &&
+    planLimits.membersUsed >= planLimits.maxMembers;
+  const atClientLimit =
+    planLimits !== null &&
+    planLimits.maxClients !== -1 &&
+    planLimits.clientsUsed >= planLimits.maxClients;
 
   const copyLink = (link: string) => {
     navigator.clipboard.writeText(link);
@@ -166,7 +200,11 @@ export default function PeoplePage() {
     setTimeout(() => setCopied(""), 2000);
   };
 
-  const handleRemoveMember = async (memberId: string, memberName: string, isTeam: boolean) => {
+  const handleRemoveMember = async (
+    memberId: string,
+    memberName: string,
+    isTeam: boolean,
+  ) => {
     const ok = await confirm({
       title: isTeam ? "Remove Team Member" : "Remove Client",
       message: `Remove ${memberName}? They will lose access to all projects.`,
@@ -179,9 +217,17 @@ export default function PeoplePage() {
       success(`${memberName} removed`);
       loadMembers();
       if (isTeam) {
-        setPlanLimits((prev) => prev ? { ...prev, membersUsed: Math.max(0, prev.membersUsed - 1) } : prev);
+        setPlanLimits((prev) =>
+          prev
+            ? { ...prev, membersUsed: Math.max(0, prev.membersUsed - 1) }
+            : prev,
+        );
       } else {
-        setPlanLimits((prev) => prev ? { ...prev, clientsUsed: Math.max(0, prev.clientsUsed - 1) } : prev);
+        setPlanLimits((prev) =>
+          prev
+            ? { ...prev, clientsUsed: Math.max(0, prev.clientsUsed - 1) }
+            : prev,
+        );
       }
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to remove");
@@ -219,7 +265,9 @@ export default function PeoplePage() {
           : `Reset link generated for ${res.email}`,
       );
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to generate reset link");
+      showError(
+        err instanceof Error ? err.message : "Failed to generate reset link",
+      );
     } finally {
       setResettingMemberId(null);
     }
@@ -243,7 +291,9 @@ export default function PeoplePage() {
       });
       success("Rate updated");
       setMembers((prev) =>
-        prev.map((m) => (m.id === memberId ? { ...m, hourlyRateCents: cents } : m)),
+        prev.map((m) =>
+          m.id === memberId ? { ...m, hourlyRateCents: cents } : m,
+        ),
       );
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update rate");
@@ -270,25 +320,24 @@ export default function PeoplePage() {
     setTeamInviteLink("");
     setTeamInviting(true);
     try {
-      await apiFetch("/auth/organization/invite-member", {
+      const created = await apiFetch<Invitation>("/clients/invitations", {
         method: "POST",
         body: JSON.stringify({ email: teamEmail, role: teamInviteRole }),
       });
       track("team_member_invited", { role: teamInviteRole });
-      const submittedEmail = teamEmail;
       setTeamEmail("");
       success("Invitation sent");
-      setPlanLimits((prev) => prev ? { ...prev, membersUsed: prev.membersUsed + 1 } : prev);
+      setPlanLimits((prev) =>
+        prev ? { ...prev, membersUsed: prev.membersUsed + 1 } : prev,
+      );
 
       const updated = await apiFetch<Invitation[]>("/clients/invitations");
       setInvitations(updated);
-      const emailLower = submittedEmail.toLowerCase();
-      const newest = [...updated]
-        .filter((inv) => inv.email.toLowerCase() === emailLower && inv.role !== "member")
-        .sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())[0];
-      if (newest) setTeamInviteLink(newest.inviteLink);
+      setTeamInviteLink(created.inviteLink);
     } catch (err) {
-      setTeamError(err instanceof Error ? err.message : "Failed to send invite");
+      setTeamError(
+        err instanceof Error ? err.message : "Failed to send invite",
+      );
     } finally {
       setTeamInviting(false);
     }
@@ -301,25 +350,24 @@ export default function PeoplePage() {
     setClientInviteLink("");
     setClientInviting(true);
     try {
-      await apiFetch("/auth/organization/invite-member", {
+      const created = await apiFetch<Invitation>("/clients/invitations", {
         method: "POST",
         body: JSON.stringify({ email: clientEmail, role: "member" }),
       });
       track("client_invited");
-      const submittedEmail = clientEmail;
       setClientEmail("");
       success("Invitation sent");
-      setPlanLimits((prev) => prev ? { ...prev, clientsUsed: prev.clientsUsed + 1 } : prev);
+      setPlanLimits((prev) =>
+        prev ? { ...prev, clientsUsed: prev.clientsUsed + 1 } : prev,
+      );
 
       const updated = await apiFetch<Invitation[]>("/clients/invitations");
       setInvitations(updated);
-      const emailLower = submittedEmail.toLowerCase();
-      const newest = [...updated]
-        .filter((inv) => inv.email.toLowerCase() === emailLower)
-        .sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime())[0];
-      if (newest) setClientInviteLink(newest.inviteLink);
+      setClientInviteLink(created.inviteLink);
     } catch (err) {
-      setClientError(err instanceof Error ? err.message : "Failed to send invite");
+      setClientError(
+        err instanceof Error ? err.message : "Failed to send invite",
+      );
     } finally {
       setClientInviting(false);
     }
@@ -351,10 +399,15 @@ export default function PeoplePage() {
         method: "PUT",
         body: JSON.stringify(editingProfile[userId] || {}),
       });
-      setProfiles((prev) => ({ ...prev, [userId]: { ...editingProfile[userId] } }));
+      setProfiles((prev) => ({
+        ...prev,
+        [userId]: { ...editingProfile[userId] },
+      }));
       success("Profile updated");
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Failed to update profile");
+      showError(
+        err instanceof Error ? err.message : "Failed to update profile",
+      );
     } finally {
       setSavingProfile(null);
     }
@@ -444,7 +497,11 @@ export default function PeoplePage() {
                   onClick={() => copyLink(resetLink.url)}
                   className="flex items-center gap-1 px-3 py-1.5 text-sm bg-[var(--primary)] text-white rounded hover:opacity-90"
                 >
-                  {copied === resetLink.url ? <Check size={14} /> : <Copy size={14} />}
+                  {copied === resetLink.url ? (
+                    <Check size={14} />
+                  ) : (
+                    <Copy size={14} />
+                  )}
                   {copied === resetLink.url ? "Copied!" : "Copy"}
                 </button>
               </div>
@@ -504,9 +561,13 @@ export default function PeoplePage() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-medium">Invite a Team Member</h2>
                 {planLimits && planLimits.maxMembers !== -1 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    atMemberLimit ? "bg-rose-500/20 text-rose-700 dark:text-rose-300" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                  }`}>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      atMemberLimit
+                        ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                        : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                    }`}
+                  >
                     {planLimits.membersUsed}/{planLimits.maxMembers} members
                   </span>
                 )}
@@ -517,9 +578,12 @@ export default function PeoplePage() {
                     <Sparkles size={15} className="text-amber-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">Team member limit reached</p>
+                    <p className="text-sm font-semibold">
+                      Team member limit reached
+                    </p>
                     <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                      Upgrade to Pro for up to 5 team members, or Lifetime for 100.
+                      Upgrade to Pro for up to 5 team members, or Lifetime for
+                      100.
                     </p>
                   </div>
                   <Link
@@ -531,37 +595,41 @@ export default function PeoplePage() {
                   </Link>
                 </div>
               ) : (
-              <form onSubmit={handleTeamInvite} className="space-y-3">
-                {teamError && (
-                  <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{teamError}</div>
-                )}
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    value={teamEmail}
-                    onChange={(e) => setTeamEmail(e.target.value)}
-                    placeholder="team@example.com"
-                    required
-                    className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-                  />
-                  <select
-                    value={teamInviteRole}
-                    onChange={(e) => setTeamInviteRole(e.target.value as "admin" | "owner")}
-                    className="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
-                  >
-                    <option value="admin">Admin</option>
-                    <option value="owner">Owner</option>
-                  </select>
-                  <button
-                    type="submit"
-                    disabled={teamInviting}
-                    className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
-                  >
-                    <UserPlus size={16} />
-                    {teamInviting ? "Inviting..." : "Invite"}
-                  </button>
-                </div>
-              </form>
+                <form onSubmit={handleTeamInvite} className="space-y-3">
+                  {teamError && (
+                    <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">
+                      {teamError}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={teamEmail}
+                      onChange={(e) => setTeamEmail(e.target.value)}
+                      placeholder="team@example.com"
+                      required
+                      className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                    />
+                    <select
+                      value={teamInviteRole}
+                      onChange={(e) =>
+                        setTeamInviteRole(e.target.value as "admin" | "owner")
+                      }
+                      className="px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="owner">Owner</option>
+                    </select>
+                    <button
+                      type="submit"
+                      disabled={teamInviting}
+                      className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
+                    >
+                      <UserPlus size={16} />
+                      {teamInviting ? "Inviting..." : "Invite"}
+                    </button>
+                  </div>
+                </form>
               )}
 
               {teamInviteLink && (
@@ -579,7 +647,11 @@ export default function PeoplePage() {
                       onClick={() => copyLink(teamInviteLink)}
                       className="flex items-center gap-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
                     >
-                      {copied === teamInviteLink ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === teamInviteLink ? (
+                        <Check size={14} />
+                      ) : (
+                        <Copy size={14} />
+                      )}
                       {copied === teamInviteLink ? "Copied!" : "Copy"}
                     </button>
                   </div>
@@ -600,7 +672,9 @@ export default function PeoplePage() {
                   >
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium">{inv.email}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${roleColor(inv.role)}`}>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${roleColor(inv.role)}`}
+                      >
                         {inv.role}
                       </span>
                     </div>
@@ -608,7 +682,11 @@ export default function PeoplePage() {
                       onClick={() => copyLink(inv.inviteLink)}
                       className="flex items-center gap-1 text-sm text-[var(--primary)] hover:underline"
                     >
-                      {copied === inv.inviteLink ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === inv.inviteLink ? (
+                        <Check size={14} />
+                      ) : (
+                        <Copy size={14} />
+                      )}
                       {copied === inv.inviteLink ? "Copied!" : "Copy Link"}
                     </button>
                   </div>
@@ -634,7 +712,9 @@ export default function PeoplePage() {
                   const canChangeRole = isOwner && !isSelf;
                   const canRemove = isOwner && !isSelf;
                   const canResetPassword =
-                    !isSelf && (isOwner || (currentRole === "admin" && member.role !== "owner"));
+                    !isSelf &&
+                    (isOwner ||
+                      (currentRole === "admin" && member.role !== "owner"));
 
                   return (
                     <div
@@ -643,9 +723,13 @@ export default function PeoplePage() {
                     >
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-medium">{member.user.name}</p>
+                          <p className="text-sm font-medium">
+                            {member.user.name}
+                          </p>
                           {isSelf && (
-                            <span className="text-xs text-[var(--muted-foreground)]">(you)</span>
+                            <span className="text-xs text-[var(--muted-foreground)]">
+                              (you)
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-[var(--muted-foreground)]">
@@ -684,20 +768,26 @@ export default function PeoplePage() {
                         {canChangeRole ? (
                           <select
                             value={member.role}
-                            onChange={(e) => handleRoleChange(member.id, e.target.value)}
+                            onChange={(e) =>
+                              handleRoleChange(member.id, e.target.value)
+                            }
                             className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer ${roleColor(member.role)}`}
                           >
                             <option value="owner">owner</option>
                             <option value="admin">admin</option>
                           </select>
                         ) : (
-                          <span className={`text-xs px-2 py-1 rounded-full ${roleColor(member.role)}`}>
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full ${roleColor(member.role)}`}
+                          >
                             {member.role}
                           </span>
                         )}
                         {canResetPassword && (
                           <button
-                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            onClick={() =>
+                              handleResetPassword(member.id, member.user.email)
+                            }
                             disabled={resettingMemberId === member.id}
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
                             title="Send password reset link"
@@ -707,7 +797,13 @@ export default function PeoplePage() {
                         )}
                         {canRemove && (
                           <button
-                            onClick={() => handleRemoveMember(member.id, member.user.name, true)}
+                            onClick={() =>
+                              handleRemoveMember(
+                                member.id,
+                                member.user.name,
+                                true,
+                              )
+                            }
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
                             title="Remove member"
                           >
@@ -721,7 +817,10 @@ export default function PeoplePage() {
               </div>
             ) : (
               <div className="text-center py-8">
-                <UsersRound size={32} className="mx-auto text-[var(--muted-foreground)] mb-2" />
+                <UsersRound
+                  size={32}
+                  className="mx-auto text-[var(--muted-foreground)] mb-2"
+                />
                 <p className="text-sm text-[var(--muted-foreground)]">
                   Just you for now. Invite team members above.
                 </p>
@@ -739,9 +838,13 @@ export default function PeoplePage() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-medium">Invite a Client</h2>
               {planLimits && planLimits.maxClients !== -1 && (
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  atClientLimit ? "bg-rose-500/20 text-rose-700 dark:text-rose-300" : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                }`}>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    atClientLimit
+                      ? "bg-rose-500/20 text-rose-700 dark:text-rose-300"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                  }`}
+                >
                   {planLimits.clientsUsed}/{planLimits.maxClients} clients
                 </span>
               )}
@@ -766,29 +869,31 @@ export default function PeoplePage() {
                 </Link>
               </div>
             ) : (
-            <form onSubmit={handleClientInvite} className="space-y-3">
-              {clientError && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">{clientError}</div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  type="email"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                  placeholder="client@example.com"
-                  required
-                  className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
-                />
-                <button
-                  type="submit"
-                  disabled={clientInviting}
-                  className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
-                >
-                  <UserPlus size={16} />
-                  {clientInviting ? "Inviting..." : "Invite"}
-                </button>
-              </div>
-            </form>
+              <form onSubmit={handleClientInvite} className="space-y-3">
+                {clientError && (
+                  <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">
+                    {clientError}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                    placeholder="client@example.com"
+                    required
+                    className="flex-1 px-3 py-2 border border-[var(--border)] rounded-lg bg-[var(--background)]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={clientInviting}
+                    className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] text-white rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-50"
+                  >
+                    <UserPlus size={16} />
+                    {clientInviting ? "Inviting..." : "Invite"}
+                  </button>
+                </div>
+              </form>
             )}
 
             {clientInviteLink && (
@@ -806,7 +911,11 @@ export default function PeoplePage() {
                     onClick={() => copyLink(clientInviteLink)}
                     className="flex items-center gap-1 px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
                   >
-                    {copied === clientInviteLink ? <Check size={14} /> : <Copy size={14} />}
+                    {copied === clientInviteLink ? (
+                      <Check size={14} />
+                    ) : (
+                      <Copy size={14} />
+                    )}
                     {copied === clientInviteLink ? "Copied!" : "Copy"}
                   </button>
                 </div>
@@ -834,7 +943,11 @@ export default function PeoplePage() {
                       onClick={() => copyLink(inv.inviteLink)}
                       className="flex items-center gap-1 text-sm text-[var(--primary)] hover:underline"
                     >
-                      {copied === inv.inviteLink ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === inv.inviteLink ? (
+                        <Check size={14} />
+                      ) : (
+                        <Copy size={14} />
+                      )}
                       {copied === inv.inviteLink ? "Copied!" : "Copy Link"}
                     </button>
                   </div>
@@ -867,18 +980,30 @@ export default function PeoplePage() {
                     >
                       <div
                         className="flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--muted)] transition-colors"
-                        onClick={() => handleExpandMember(member.id, member.userId)}
+                        onClick={() =>
+                          handleExpandMember(member.id, member.userId)
+                        }
                       >
                         <div className="flex items-center gap-2">
-                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {isExpanded ? (
+                            <ChevronDown size={14} />
+                          ) : (
+                            <ChevronRight size={14} />
+                          )}
                           <div>
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <p className="text-sm font-medium">{member.user.name}</p>
-                              {member.labels && member.labels.length > 0 &&
+                              <p className="text-sm font-medium">
+                                {member.user.name}
+                              </p>
+                              {member.labels &&
+                                member.labels.length > 0 &&
                                 member.labels.map((l) => (
-                                  <LabelBadge key={l.label.id} name={l.label.name} color={l.label.color} />
-                                ))
-                              }
+                                  <LabelBadge
+                                    key={l.label.id}
+                                    name={l.label.name}
+                                    color={l.label.color}
+                                  />
+                                ))}
                             </div>
                             <p className="text-xs text-[var(--muted-foreground)]">
                               {member.user.email}
@@ -888,8 +1013,12 @@ export default function PeoplePage() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {(currentRole === "owner" || currentRole === "admin") && (
+                        <div
+                          className="flex items-center gap-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {(currentRole === "owner" ||
+                            currentRole === "admin") && (
                             <button
                               onClick={() =>
                                 handleViewAsClient(
@@ -906,7 +1035,9 @@ export default function PeoplePage() {
                             </button>
                           )}
                           <button
-                            onClick={() => handleResetPassword(member.id, member.user.email)}
+                            onClick={() =>
+                              handleResetPassword(member.id, member.user.email)
+                            }
                             disabled={resettingMemberId === member.id}
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors disabled:opacity-50"
                             title="Send password reset link"
@@ -914,7 +1045,13 @@ export default function PeoplePage() {
                             <KeyRound size={14} />
                           </button>
                           <button
-                            onClick={() => handleRemoveMember(member.id, member.user.name, false)}
+                            onClick={() =>
+                              handleRemoveMember(
+                                member.id,
+                                member.user.name,
+                                false,
+                              )
+                            }
                             className="p-1.5 text-[var(--muted-foreground)] hover:text-red-500 transition-colors"
                             title="Remove client"
                           >
@@ -927,56 +1064,76 @@ export default function PeoplePage() {
                         <div className="px-3 pb-3 pt-1 border-t border-[var(--border)] space-y-3">
                           <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="text-xs text-[var(--muted-foreground)]">Company</label>
+                              <label className="text-xs text-[var(--muted-foreground)]">
+                                Company
+                              </label>
                               <input
                                 type="text"
                                 value={memberProfile.company || ""}
                                 onChange={(e) =>
                                   setEditingProfile((prev) => ({
                                     ...prev,
-                                    [member.userId]: { ...prev[member.userId], company: e.target.value },
+                                    [member.userId]: {
+                                      ...prev[member.userId],
+                                      company: e.target.value,
+                                    },
                                   }))
                                 }
                                 className="w-full mt-0.5 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                               />
                             </div>
                             <div>
-                              <label className="text-xs text-[var(--muted-foreground)]">Phone</label>
+                              <label className="text-xs text-[var(--muted-foreground)]">
+                                Phone
+                              </label>
                               <input
                                 type="text"
                                 value={memberProfile.phone || ""}
                                 onChange={(e) =>
                                   setEditingProfile((prev) => ({
                                     ...prev,
-                                    [member.userId]: { ...prev[member.userId], phone: e.target.value },
+                                    [member.userId]: {
+                                      ...prev[member.userId],
+                                      phone: e.target.value,
+                                    },
                                   }))
                                 }
                                 className="w-full mt-0.5 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                               />
                             </div>
                             <div>
-                              <label className="text-xs text-[var(--muted-foreground)]">Address</label>
+                              <label className="text-xs text-[var(--muted-foreground)]">
+                                Address
+                              </label>
                               <input
                                 type="text"
                                 value={memberProfile.address || ""}
                                 onChange={(e) =>
                                   setEditingProfile((prev) => ({
                                     ...prev,
-                                    [member.userId]: { ...prev[member.userId], address: e.target.value },
+                                    [member.userId]: {
+                                      ...prev[member.userId],
+                                      address: e.target.value,
+                                    },
                                   }))
                                 }
                                 className="w-full mt-0.5 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
                               />
                             </div>
                             <div>
-                              <label className="text-xs text-[var(--muted-foreground)]">Website</label>
+                              <label className="text-xs text-[var(--muted-foreground)]">
+                                Website
+                              </label>
                               <input
                                 type="text"
                                 value={memberProfile.website || ""}
                                 onChange={(e) =>
                                   setEditingProfile((prev) => ({
                                     ...prev,
-                                    [member.userId]: { ...prev[member.userId], website: e.target.value },
+                                    [member.userId]: {
+                                      ...prev[member.userId],
+                                      website: e.target.value,
+                                    },
                                   }))
                                 }
                                 className="w-full mt-0.5 px-2 py-1.5 border border-[var(--border)] rounded-lg bg-[var(--background)] text-sm"
@@ -984,13 +1141,18 @@ export default function PeoplePage() {
                             </div>
                           </div>
                           <div>
-                            <label className="text-xs text-[var(--muted-foreground)]">Description</label>
+                            <label className="text-xs text-[var(--muted-foreground)]">
+                              Description
+                            </label>
                             <textarea
                               value={memberProfile.description || ""}
                               onChange={(e) =>
                                 setEditingProfile((prev) => ({
                                   ...prev,
-                                  [member.userId]: { ...prev[member.userId], description: e.target.value },
+                                  [member.userId]: {
+                                    ...prev[member.userId],
+                                    description: e.target.value,
+                                  },
                                 }))
                               }
                               rows={2}
@@ -1002,7 +1164,9 @@ export default function PeoplePage() {
                             disabled={savingProfile === member.userId}
                             className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
                           >
-                            {savingProfile === member.userId ? "Saving..." : "Save Profile"}
+                            {savingProfile === member.userId
+                              ? "Saving..."
+                              : "Save Profile"}
                           </button>
                         </div>
                       )}

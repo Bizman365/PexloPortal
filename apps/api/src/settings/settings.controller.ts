@@ -12,7 +12,7 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { SettingsService } from "./settings.service";
 import { BillingService } from "../billing/billing.service";
-import { UpdateSettingsDto, SaveCustomDomainDto } from "./settings.dto";
+import { UpdateSettingsDto, UpdateOrganizationDto, SaveCustomDomainDto } from "./settings.dto";
 import { AuthGuard, RolesGuard, Roles, CurrentOrg, CurrentUser } from "../common";
 
 @Controller("settings")
@@ -46,6 +46,15 @@ export class SettingsController {
     @Body() dto: UpdateSettingsDto,
   ) {
     return this.settingsService.updateSettings(orgId, dto);
+  }
+
+  @Patch("organization")
+  @Roles("owner", "admin")
+  updateOrganization(
+    @CurrentOrg("id") orgId: string,
+    @Body() dto: UpdateOrganizationDto,
+  ) {
+    return this.settingsService.updateOrganization(orgId, dto);
   }
 
   // No @Roles — intentionally accessible to all authenticated users including clients

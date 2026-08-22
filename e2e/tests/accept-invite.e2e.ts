@@ -1,82 +1,24 @@
 import { test, expect } from "@playwright/test";
+import { randomBytes, randomUUID } from "node:crypto";
+import { PrismaClient } from "../../packages/database/src";
+import { seedUser } from "./helpers";
 
 const API_URL = "http://localhost:3001";
 const WEB_URL = "http://localhost:3000";
 
-/**
- * Helper: create an owner user with an org via the onboarding API,
- * then establish a browser session for that user.
- */
-async function createOwnerUser(
-  browser: import("@playwright/test").Browser,
-  prefix = "invite-owner",
-) {
-  const context = await browser.newContext({ storageState: undefined });
-  const page = await context.newPage();
+const prisma = new PrismaClient();
 
-  const orgName = `${prefix} Org ${Date.now().toString(36)}`;
-  const email = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-  const password = "InviteOwner123!";
-
-  const res = await page.request.post(`${API_URL}/api/onboarding/signup`, {
-    data: {
-      name: "Invite Owner",
-      email,
-      password,
-      orgName,
-    },
-  });
-
-  if (!res.ok()) {
-    const body = await res.text();
-    throw new Error(`Owner signup failed (${res.status()}): ${body}`);
-  }
-
-  // Navigate to establish session cookies
-  await page.goto(`${WEB_URL}/dashboard`, {
-    waitUntil: "networkidle",
-    timeout: 15000,
-  });
-
-  let url = page.url();
-  if (url.includes("/login")) {
-    await page.goto(`${WEB_URL}/login`);
-    await page.getByLabel(/email/i).fill(email);
-    await page.getByLabel(/password/i).fill(password);
-    await page.getByRole("button", { name: /sign in/i }).click();
-    await page.waitForURL(/\/(setup|dashboard)/, { timeout: 15000 });
-    url = page.url();
-  }
-
-  if (url.includes("/setup")) {
-    await page.request.get(`${API_URL}/api/setup/status`);
-    const cookies = await context.cookies();
-    const csrfToken = cookies.find((c) => c.name === "csrf-token")?.value || "";
-    await page.request.post(`${API_URL}/api/setup/complete`, {
-      headers: { "x-csrf-token": csrfToken },
-    });
-    await page.goto(`${WEB_URL}/dashboard`, {
-      waitUntil: "networkidle",
-      timeout: 15000,
-    });
-  }
-
-  return { context, page, email, password, orgName };
-}
-
-/**
- * Helper: invite a client email from an owner's page context.
- * Returns the invitation ID.
- */
 async function inviteClient(
   ownerPage: import("@playwright/test").Page,
+  csrfToken: string,
   clientEmail: string,
+  role = "member",
 ) {
   const inviteRes = await ownerPage.request.post(
-    `${API_URL}/api/auth/organization/invite-member`,
+    `${API_URL}/api/clients/invitations`,
     {
-      data: { email: clientEmail, role: "member" },
-      headers: { Origin: WEB_URL },
+      data: { email: clientEmail, role },
+      headers: { Origin: WEB_URL, "x-csrf-token": csrfToken },
     },
   );
 
@@ -85,192 +27,165 @@ async function inviteClient(
     throw new Error(`Invite failed (${inviteRes.status()}): ${body}`);
   }
 
-  const inviteData = await inviteRes.json();
-  const invitationId =
-    inviteData?.id || inviteData?.invitation?.id || inviteData?.data?.id;
-
-  if (!invitationId) {
-    throw new Error(
-      `No invitation ID returned: ${JSON.stringify(inviteData)}`,
-    );
+  const inviteData: { id?: string; inviteLink?: string } = await inviteRes.json();
+  if (!inviteData.id) {
+    throw new Error(`No invitation ID returned: ${JSON.stringify(inviteData)}`);
   }
 
-  return invitationId;
+  return inviteData as { id: string; inviteLink: string };
+}
+
+async function createInviteeContext(
+  browser: import("@playwright/test").Browser,
+  email: string,
+) {
+  const user = await prisma.user.create({
+    data: {
+      id: randomUUID(),
+      name: "Invited Client",
+      email,
+      emailVerified: true,
+    },
+  });
+  const csrfToken = randomBytes(32).toString("hex");
+  const context = await browser.newContext({ storageState: undefined });
+  await context.addCookies([
+    {
+      name: "e2e-test-user",
+      value: user.id,
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+    {
+      name: "csrf-token",
+      value: csrfToken,
+      domain: "localhost",
+      path: "/",
+      sameSite: "Lax",
+    },
+  ]);
+  return { context, userId: user.id, csrfToken };
 }
 
 test.describe("Accept Invite", () => {
-  test("client can sign up from invite link and gets redirected to portal", async ({
+  test.afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  test("new invitee sees invite details and is routed through WorkOS AuthKit", async ({
     browser,
   }) => {
-    // Step 1: Create an owner user with an org
-    const {
-      context: ownerCtx,
-      page: ownerPage,
-    } = await createOwnerUser(browser, "inv-signup");
+    const owner = await seedUser(browser, { prefix: "inv-new", role: "owner" });
+    const ownerPage = await owner.context.newPage();
+    const clientEmail = `inv-client-${Date.now()}-${randomBytes(2).toString("hex")}@test.local`;
+    const invitation = await inviteClient(ownerPage, owner.csrfToken, clientEmail);
+    await owner.context.close();
 
-    // Step 2: Invite a client email
-    const clientEmail = `inv-client-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-    const invitationId = await inviteClient(ownerPage, clientEmail);
-    await ownerCtx.close();
-
-    // Step 3: Open accept-invite page in a fresh browser context (no session)
     const clientCtx = await browser.newContext({ storageState: undefined });
     const clientPage = await clientCtx.newPage();
 
-    await clientPage.goto(
-      `${WEB_URL}/accept-invite?id=${invitationId}`,
-      { waitUntil: "networkidle", timeout: 15000 },
-    );
+    await clientPage.goto(`${WEB_URL}/accept-invite?id=${invitation.id}`, {
+      waitUntil: "networkidle",
+      timeout: 15000,
+    });
 
-    // Verify the signup form is shown
     await expect(
-      clientPage.getByRole("heading", { name: /join project portal/i }),
+      clientPage.getByRole("heading", { name: /join inv-new org/i }),
     ).toBeVisible({ timeout: 10000 });
-    await expect(
-      clientPage.getByText(/create an account to access your project/i),
-    ).toBeVisible();
+    await expect(clientPage.getByText(clientEmail, { exact: true })).toBeVisible();
 
-    // Step 4: Fill in the signup form
-    await clientPage.getByLabel(/your name/i).fill("Invited Client");
-    await clientPage.getByLabel(/email/i).fill(clientEmail);
-    await clientPage.getByLabel(/password/i).fill("ClientPass123!");
-
-    // Step 5: Submit the form
-    await clientPage.getByRole("button", { name: /create account & join/i }).click();
-
-    // Step 6: Verify redirect to portal
-    await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
+    const cta = clientPage.getByRole("link", { name: /continue with workos/i });
+    await expect(cta).toBeVisible();
+    const href = await cta.getAttribute("href");
+    expect(href).toContain("/portal/sign-in?");
+    expect(decodeURIComponent(href ?? "")).toContain(
+      `/accept-invite/complete?id=${invitation.id}`,
+    );
+    expect(decodeURIComponent(href ?? "")).toContain(`loginHint=${clientEmail}`);
 
     await clientCtx.close();
   });
 
-  test("client with existing account can sign in from invite link", async ({
+  test("existing account accepts invite from WorkOS return path and lands on portal", async ({
     browser,
   }) => {
-    // Step 1: Create an owner user with an org
-    const {
-      context: ownerCtx,
-      page: ownerPage,
-    } = await createOwnerUser(browser, "inv-login");
+    const owner = await seedUser(browser, { prefix: "inv-existing", role: "owner" });
+    const ownerPage = await owner.context.newPage();
+    const clientEmail = `inv-existing-client-${Date.now()}-${randomBytes(2).toString("hex")}@test.local`;
+    const invitation = await inviteClient(ownerPage, owner.csrfToken, clientEmail);
+    await owner.context.close();
 
-    // Step 2: Invite the client email first (while owner session is active)
-    const clientEmail = `inv-existing-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-    const clientPassword = "ExistingClient123!";
+    const invitee = await createInviteeContext(browser, clientEmail);
+    const clientPage = await invitee.context.newPage();
 
-    const invitationId = await inviteClient(ownerPage, clientEmail);
-    await ownerCtx.close();
+    await clientPage.goto(`${WEB_URL}/accept-invite/complete?id=${invitation.id}`, {
+      waitUntil: "networkidle",
+      timeout: 20000,
+    });
 
-    // Step 3: Create the client account in a separate context (so we don't clobber the owner session)
-    const tempCtx = await browser.newContext({ storageState: undefined });
-    const tempPage = await tempCtx.newPage();
-    const signupRes = await tempPage.request.post(
-      `${API_URL}/api/auth/sign-up/email`,
-      {
-        data: {
-          name: "Existing Client",
-          email: clientEmail,
-          password: clientPassword,
-        },
-        headers: { Origin: WEB_URL },
-      },
-    );
-
-    if (!signupRes.ok()) {
-      const body = await signupRes.text();
-      throw new Error(
-        `Client account creation failed (${signupRes.status()}): ${body}`,
-      );
-    }
-    await tempCtx.close();
-
-    // Step 4: Open accept-invite page in a fresh browser context
-    const clientCtx = await browser.newContext({ storageState: undefined });
-    const clientPage = await clientCtx.newPage();
-
-    await clientPage.goto(
-      `${WEB_URL}/accept-invite?id=${invitationId}`,
-      { waitUntil: "networkidle", timeout: 15000 },
-    );
-
-    // Step 5: Switch to login mode
-    await clientPage.getByRole("button", { name: /sign in instead/i }).click();
-
-    await expect(
-      clientPage.getByText(/sign in to accept your invitation/i),
-    ).toBeVisible();
-
-    // Step 6: Fill in login credentials and submit
-    await clientPage.getByLabel(/email/i).fill(clientEmail);
-    await clientPage.getByLabel(/password/i).fill(clientPassword);
-    await clientPage.getByRole("button", { name: /sign in & join/i }).click();
-
-    // Step 7: Verify redirect to portal
     await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
 
-    await clientCtx.close();
+    const persistedInvite = await prisma.invitation.findUnique({
+      where: { id: invitation.id },
+    });
+    expect(persistedInvite?.status).toBe("accepted");
+
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: invitee.userId,
+        organizationId: owner.orgId,
+        role: "member",
+      },
+    });
+    expect(member).toBeTruthy();
+
+    await invitee.context.close();
   });
 
-  test("client invited while already owning another org lands on portal, not setup", async ({
+  test("invitee who owns another org lands on portal for the invited org, not setup", async ({
     browser,
   }) => {
-    // The bug: setActiveOrgAndRedirect picked orgs[0] regardless of which org
-    // was just joined, so a user who already owned an org would be sent to
-    // /dashboard (and onward to /setup if that org had pending setup) instead
-    // of /portal for the org they were invited to as a client.
+    const inviter = await seedUser(browser, {
+      prefix: "inv-multi-inviter",
+      role: "owner",
+    });
+    const inviterPage = await inviter.context.newPage();
 
-    // Step 1: Inviter org and inviter session
-    const {
-      context: inviterCtx,
-      page: inviterPage,
-    } = await createOwnerUser(browser, "inv-multi-inviter");
+    const invitee = await seedUser(browser, {
+      prefix: "inv-multi",
+      role: "owner",
+      setupCompleted: false,
+    });
 
-    // Step 2: Invitee already owns their own (separate) org
-    const inviteeEmail = `inv-multi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.local`;
-    const inviteePassword = "MultiOrgClient123!";
-    const ownCtx = await browser.newContext({ storageState: undefined });
-    const ownPage = await ownCtx.newPage();
-    const ownSignup = await ownPage.request.post(
-      `${API_URL}/api/onboarding/signup`,
-      {
-        data: {
-          name: "Multi Org Invitee",
-          email: inviteeEmail,
-          password: inviteePassword,
-          orgName: `Invitee Own Org ${Date.now().toString(36)}`,
-        },
-      },
+    const invitation = await inviteClient(
+      inviterPage,
+      inviter.csrfToken,
+      invitee.email,
     );
-    if (!ownSignup.ok()) {
-      throw new Error(
-        `Invitee own-org signup failed (${ownSignup.status()}): ${await ownSignup.text()}`,
-      );
-    }
-    await ownCtx.close();
+    await inviter.context.close();
 
-    // Step 3: Inviter invites the invitee as a client (member role)
-    const invitationId = await inviteClient(inviterPage, inviteeEmail);
-    await inviterCtx.close();
+    const clientPage = await invitee.context.newPage();
+    await clientPage.goto(`${WEB_URL}/accept-invite/complete?id=${invitation.id}`, {
+      waitUntil: "networkidle",
+      timeout: 20000,
+    });
 
-    // Step 4: Invitee opens the invite link in a fresh context and signs in
-    const clientCtx = await browser.newContext({ storageState: undefined });
-    const clientPage = await clientCtx.newPage();
-    await clientPage.goto(
-      `${WEB_URL}/accept-invite?id=${invitationId}`,
-      { waitUntil: "networkidle", timeout: 15000 },
-    );
-
-    await clientPage.getByRole("button", { name: /sign in instead/i }).click();
-    await clientPage.getByLabel(/email/i).fill(inviteeEmail);
-    await clientPage.getByLabel(/password/i).fill(inviteePassword);
-    await clientPage.getByRole("button", { name: /sign in & join/i }).click();
-
-    // Step 5: Must land in the portal of the inviting org, NOT on their own
-    // dashboard or setup wizard.
     await expect(clientPage).toHaveURL(/\/portal/, { timeout: 20000 });
     expect(clientPage.url()).not.toMatch(/\/dashboard/);
     expect(clientPage.url()).not.toMatch(/\/setup/);
 
-    await clientCtx.close();
+    const member = await prisma.member.findFirst({
+      where: {
+        userId: invitee.userId,
+        organizationId: inviter.orgId,
+        role: "member",
+      },
+    });
+    expect(member).toBeTruthy();
+
+    await invitee.context.close();
   });
 
   test("shows invalid invitation message when no ID is provided", async ({

@@ -1,33 +1,95 @@
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-atrium}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atrium}
-      POSTGRES_DB: ${POSTGRES_DB:-atrium}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atrium}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+# Pexlo Portal — reference compose.
+#
+# This mirrors the production deployment on the Hetzner box
+# (/opt/pexlo-portal/docker-compose.yml), which is the source of truth and is
+# driven by /opt/pexlo-portal/deploy.sh (build-on-box -> compose up -> health
+# check -> rollback). The image `pexlo-portal:latest` is built on the box from
+# docker/unified.Dockerfile; it is not pulled from a registry.
+#
+# Auth is WorkOS (AuthKit). Storage is Cloudflare R2. TLS terminates at Caddy.
+# The database is external (Neon) via DATABASE_URL — there is no bundled
+# Postgres in production. A self-host Postgres option is provided (commented)
+# at the bottom for fully self-contained setups.
 
-  atrium:
-    image: vibralabs/atrium:latest
-    ports:
-      - "8080:8080"
+services:
+  atrium: # compose service name kept as `atrium` to match the box (deploy.sh SERVICE=atrium)
+    image: pexlo-portal:latest
+    container_name: pexlo-portal
+    restart: unless-stopped
+    expose:
+      - "8080"
     environment:
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-atrium}:${POSTGRES_PASSWORD:-atrium}@postgres:5432/${POSTGRES_DB:-atrium}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-change-me-to-a-random-string-at-least-32-chars}"
-      # SECURE_COOKIES: "false"  # Only if accessing over plain HTTP (no HTTPS).
-      #                          # A reverse proxy with HTTPS is strongly recommended.
+      DATABASE_URL: "${DATABASE_URL}"
+      DIRECT_URL: "${DIRECT_URL}"
+      WEB_URL: "${WEB_URL:-https://portal.pexlo.com}"
+      API_URL: "${API_URL:-https://portal.pexlo.com}"
+      NODE_ENV: "production"
+      SECURE_COOKIES: "true"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      MAX_FILE_SIZE_MB: "${MAX_FILE_SIZE_MB:-100}"
+      SKIP_DB_PUSH: "${SKIP_DB_PUSH:-false}"
+      # Storage — Cloudflare R2 (S3-compatible)
+      STORAGE_PROVIDER: "${STORAGE_PROVIDER:-r2}"
+      S3_ENDPOINT: "${S3_ENDPOINT}"
+      S3_REGION: "auto"
+      S3_BUCKET: "${S3_BUCKET:-pexlo-portal}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      # Email
+      RESEND_API_KEY: "${RESEND_API_KEY}"
+      EMAIL_FROM: "${EMAIL_FROM:-portal@pexlo.com}"
+      # Auth — WorkOS (AuthKit)
+      WORKOS_API_KEY: "${WORKOS_API_KEY}"
+      WORKOS_CLIENT_ID: "${WORKOS_CLIENT_ID}"
+      WORKOS_COOKIE_PASSWORD: "${WORKOS_COOKIE_PASSWORD}"
+      WORKOS_REDIRECT_URI: "${WORKOS_REDIRECT_URI}"
+      WORKOS_COOKIE_NAME: "${WORKOS_COOKIE_NAME:-wos-session}"
+    networks:
+      - portal
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: pexlo-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - uploads:/app/uploads
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
-      postgres:
-        condition: service_healthy
+      - atrium
+    networks:
+      - portal
+
+networks:
+  portal:
+    driver: bridge
 
 volumes:
-  pgdata:
-  uploads:
+  caddy_data:
+  caddy_config:
+
+# --- Optional: fully self-contained Postgres (not used in production) ---
+# To run a bundled database instead of an external DATABASE_URL, uncomment and
+# point DATABASE_URL at "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}".
+#
+#  postgres:
+#    image: postgres:16-alpine
+#    environment:
+#      POSTGRES_USER: ${POSTGRES_USER:-pexlo}
+#      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+#      POSTGRES_DB: ${POSTGRES_DB:-pexlo_portal}
+#    volumes:
+#      - pgdata:/var/lib/postgresql/data
+#    healthcheck:
+#      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pexlo}"]
+#      interval: 5s
+#      timeout: 5s
+#      retries: 5
+#    networks:
+#      - portal
+#
+# volumes:
+#   pgdata:

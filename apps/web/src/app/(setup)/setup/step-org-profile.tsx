@@ -79,12 +79,10 @@ export function StepOrgProfile({ orgName, onNext }: StepOrgProfileProps) {
     setSaving(true);
     setError("");
     try {
-      // Update org name via Better Auth
-      await fetch(`${API_URL}/api/auth/organization/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: { name: name.trim() } }),
-        credentials: "include",
+      // Update org name
+      await apiFetch("/settings/organization", {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.trim() }),
       });
 
       // Update branding colors

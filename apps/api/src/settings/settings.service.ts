@@ -2,7 +2,7 @@ import { Injectable, ConflictException, BadRequestException } from "@nestjs/comm
 import { ConfigService } from "@nestjs/config";
 import { InjectPinoLogger, PinoLogger } from "nestjs-pino";
 import { PrismaService } from "../prisma/prisma.service";
-import { UpdateSettingsDto } from "./settings.dto";
+import { UpdateSettingsDto, UpdateOrganizationDto } from "./settings.dto";
 import { setSentryEnabled } from "../instrument";
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
 import dns from "node:dns/promises";
@@ -121,6 +121,14 @@ export class SettingsService {
       stripeSecretKey: settings.stripeSecretKey ? "••••••••" : null,
       stripeWebhookSecret: settings.stripeWebhookSecret ? "••••••••" : null,
     };
+  }
+
+  async updateOrganization(organizationId: string, dto: UpdateOrganizationDto) {
+    return this.prisma.organization.update({
+      where: { id: organizationId },
+      data: { name: dto.name.trim() },
+      select: { id: true, name: true },
+    });
   }
 
   async getPaymentInstructions(organizationId: string) {

@@ -1,6 +1,6 @@
 # Docker Deployment
 
-Atrium ships as a single Docker image (`vibralabs/atrium`) that bundles the API, web app, Caddy reverse proxy, and an optional built-in PostgreSQL database. One container, one port (8080).
+Atrium ships as a single Docker image (`pexlo-portal`) that bundles the API, web app, Caddy reverse proxy, and an optional built-in PostgreSQL database. One container, one port (8080).
 
 ## Quick Start
 
@@ -13,7 +13,7 @@ docker run -d \
   -v atrium-db:/var/lib/postgresql/data \
   -v atrium-uploads:/app/uploads \
   -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
-  vibralabs/atrium:latest
+  pexlo-portal:latest
 ```
 
 Open `http://localhost:8080` and create your account.
@@ -23,7 +23,7 @@ Open `http://localhost:8080` and create your account.
 ```yaml
 services:
   atrium:
-    image: vibralabs/atrium:latest
+    image: pexlo-portal:latest
     ports:
       - "8080:8080"
     environment:
@@ -50,7 +50,7 @@ docker run -d \
   -e USE_BUILT_IN_DB=false \
   -e DATABASE_URL=postgresql://user:password@your-db-host:5432/atrium \
   -e BETTER_AUTH_SECRET=$(openssl rand -base64 32) \
-  vibralabs/atrium:latest
+  pexlo-portal:latest
 ```
 
 Or with Docker Compose:
@@ -58,7 +58,7 @@ Or with Docker Compose:
 ```yaml
 services:
   atrium:
-    image: vibralabs/atrium:latest
+    image: pexlo-portal:latest
     ports:
       - "8080:8080"
     environment:
@@ -114,7 +114,7 @@ The database schema is automatically applied on startup. To skip this (e.g. when
 ```bash
 git clone https://github.com/Vibra-Labs/Atrium.git
 cd Atrium
-docker build -f docker/unified.Dockerfile -t atrium .
+docker build -f docker/unified.Dockerfile -t pexlo-portal .
 ```
 
 ## Platform Support

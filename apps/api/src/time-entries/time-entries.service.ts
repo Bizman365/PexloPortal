@@ -802,6 +802,7 @@ export class TimeEntriesService {
         data: {
           organizationId: orgId,
           projectId: hasProjectId ? dto.projectId : null,
+          billingClientId: hasBillingClientId ? dto.billingClientId : null,
           invoiceNumber,
           status: "draft",
         },
