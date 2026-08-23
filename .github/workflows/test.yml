@@ -44,7 +44,8 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Keep the frozen lockfile gate on the repository's declared package-manager version.
+          bun-version: 1.3.9
 
       - run: bun install --frozen-lockfile
 
