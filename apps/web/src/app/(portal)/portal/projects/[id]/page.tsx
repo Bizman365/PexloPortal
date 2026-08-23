@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
 import { Pagination } from "@/components/pagination";
@@ -148,11 +148,6 @@ interface DocumentRecord {
   expiresAt?: string;
   voidReason?: string;
   options?: string;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 const docTypeLabels: Record<string, string> = {

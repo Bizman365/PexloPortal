@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-modal";
 import { formatDuration, formatHours } from "@/lib/format-duration";
@@ -68,11 +68,6 @@ interface EntryListResponse {
   data: Entry[];
 }
 
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
-}
-
 interface TimeTabProps {
   projectId: string;
   isArchived?: boolean;
@@ -135,12 +130,12 @@ export function TimeTab({ projectId, isArchived }: TimeTabProps): React.ReactEle
         apiFetch<EntryListResponse>(`/time-entries?projectId=${projectId}&limit=200`),
         apiFetch<RunningEntry | null>("/time-entries/running"),
         apiFetch<PendingCapture[]>("/time-entries/pending-captures"),
-        apiFetch<PaginatedResponse<TaskOption>>(`/tasks/project/${projectId}?page=1&limit=100&status=active`),
+        fetchAllPages<TaskOption>(`/tasks/project/${projectId}?status=active`),
       ]);
       setEntries(entriesRes.data);
       setRunningDetails(runningRes?.projectId === projectId ? runningRes : null);
       setPendingCaptures(pendingRes.filter((capture) => capture.projectId === projectId));
-      setOpenTasks(tasksRes.data.filter((task) => task.status !== "done" && task.status !== "cancelled"));
+      setOpenTasks(tasksRes.filter((task) => task.status !== "done" && task.status !== "cancelled"));
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : "Could not load time entries";

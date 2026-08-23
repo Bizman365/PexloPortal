@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
@@ -47,11 +47,6 @@ interface TimelineEntry {
   targetId?: string;
   targetTitle?: string;
   detail?: string;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 const actionLabels: Record<string, string> = {

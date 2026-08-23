@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch, fetchAllPages } from "@/lib/api";
+import { apiFetch, fetchAllPages, type PaginatedResponse } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ClientItemSkeleton } from "@/components/skeletons";
@@ -57,11 +57,6 @@ interface ClientProfile {
   address?: string;
   website?: string;
   description?: string;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 const roleColor = (role: string) => {

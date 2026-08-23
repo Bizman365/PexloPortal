@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -30,11 +30,6 @@ interface InvoiceListItem {
   uploadedFile?: { id: string; filename: string; sizeBytes: number } | null;
   lineItems: LineItem[];
   createdAt: string;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 const statusColors: Record<string, { bg: string; text: string }> = {

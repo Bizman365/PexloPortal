@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Shared notification state — ensures a single polling interval even when
@@ -59,11 +59,6 @@ interface Notification {
   createdAt: string;
 }
 
-interface PaginatedResponse {
-  data: Notification[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
-}
-
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor(
     (Date.now() - new Date(dateStr).getTime()) / 1000,
@@ -106,7 +101,7 @@ export function NotificationBell({ align = "right" }: { align?: "left" | "right"
 
   const fetchNotifications = useCallback(() => {
     setLoading(true);
-    apiFetch<PaginatedResponse>("/notifications?limit=10")
+    apiFetch<PaginatedResponse<Notification>>("/notifications?limit=10")
       .then((res) => setNotifications(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));

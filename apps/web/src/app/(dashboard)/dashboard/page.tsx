@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { StatCardSkeleton } from "@/components/skeletons";
 import { FolderKanban, TrendingUp, CheckCircle, Receipt } from "lucide-react";
@@ -24,11 +24,6 @@ interface InvoiceStats {
   outstandingAmount: number;
   totalInvoices: number;
   paidAmount: number;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 export default function DashboardPage() {
