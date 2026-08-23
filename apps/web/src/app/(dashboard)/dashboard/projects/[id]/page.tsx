@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, fetchAllPages } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { ProjectDetailSkeleton } from "@/components/skeletons";
@@ -66,13 +66,6 @@ interface ClientMember {
   userId: string;
   role: string;
   user: { id: string; name: string; email: string };
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
 }
 
 const tabs = [
@@ -164,11 +157,8 @@ export default function ProjectDetailPage() {
     apiFetch<ProjectStatus[]>("/projects/statuses")
       .then(setStatuses)
       .catch(console.error);
-    apiFetch<ClientMember[] | PaginatedResponse<ClientMember>>("/clients")
-      .then((res) => {
-        const data = Array.isArray(res) ? res : res.data;
-        setClients(data.filter((m: ClientMember) => m.role === "member"));
-      })
+    fetchAllPages<ClientMember>("/clients")
+      .then((rows) => setClients(rows.filter((member) => member.role === "member")))
       .catch(console.error);
     apiFetch<{ role: string }>("/auth/organization/get-active-member")
       .then((member) => setCurrentRole(member.role))

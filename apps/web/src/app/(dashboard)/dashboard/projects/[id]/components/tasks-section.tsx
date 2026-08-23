@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch, fetchAllPages } from "@/lib/api";
+import { apiFetch, fetchAllPages, type PaginatedResponse } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-modal";
 import { useToast } from "@/components/toast";
 import { Pagination } from "@/components/pagination";
@@ -59,11 +59,6 @@ interface OrgMember {
   userId: string;
   role: string;
   user: { id: string; name: string; email: string; image?: string | null };
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 export function TasksSection({

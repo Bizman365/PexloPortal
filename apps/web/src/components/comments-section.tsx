@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type PaginatedResponse } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { MessageSquare, Send, Trash2 } from "lucide-react";
 import { linkify } from "@/lib/linkify";
@@ -11,11 +11,6 @@ interface CommentRecord {
   content: string;
   author: { id: string; name: string };
   createdAt: string;
-}
-
-interface PaginatedResponse<T> {
-  data: T[];
-  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 // Cache session per page load — keyed by userId to avoid stale data across logins.
